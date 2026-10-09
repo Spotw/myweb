@@ -1,0 +1,43 @@
+body {
+  background-color: lightgray;
+}
+
+h1 {
+  color: rgb(192, 49, 49);
+  text-align: left;
+}
+h2 {
+  color: rgb(192, 125, 49);
+}
+p {
+  font-family: times new roman;
+  font-size: 16px;
+}
+.buton {
+  background-color: #045daa;
+  color: white;
+  font-size: 15px;
+  padding: 7px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.buton:hover {
+  background-color: #045daa;
+}
+
+.div0 {
+  width: 500px;
+  height: 300px;  
+  padding: 5px;
+  border: 1px solid rgb(4, 0, 0);
+}
+
+.custom-input {
+  width: 500px;            /* Chiều rộng ô */
+  padding: 12px 16px;      /* Đệm trên/dưới 12px, trái/phải 16px để ô cao và thoáng */
+  font-size: 14px;         /* Cỡ chữ hiển thị */
+  box-sizing: border-box;  /* Giữ đúng kích thước khi thêm border hoặc padding */
+  border: 1px solid #ccc;  /* Viền ngoài */
+  border-radius: 6px;      /* Bo góc nhẹ */
+}
