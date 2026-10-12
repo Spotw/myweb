@@ -1,34 +1,26 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<title>Ghi chú trong tuần</title>
-<link rel="stylesheet" href="style.css">
-<script src="app.js" defer></script>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Ghi chú theo từng ngày trong tuần, lưu ngay trên trình duyệt của bạn.">
+  <meta name="theme-color" content="#e9eef3">
+  <title>Ghi chú trong tuần</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
 </head>
 <body>
-<div class="div0">
-<h1>Thứ 2</h1>
-<!--<p>Nội dung</p> -->
-  <label for="content1">Nội dung:</label><br> <br>
-  <input type="text" class="custom-input" id="content1" name="content1" placeholder="Nhập nội dung..."> <br>
-  <label for="note1">Lưu ý:</label><br> <br>
-  <input type="text" class="custom-input" id="note1" name="note1" placeholder="Nhập lưu ý..."> <br> <br>
-  <button id="ok" class="buton">Lưu</button>
+  <header class="page-header">
+    <h1>Ghi chú trong tuần</h1>
+    <p class="page-hint">Ghi chú được lưu ngay trên trình duyệt này. Đổi máy hoặc xóa dữ liệu trình duyệt sẽ mất ghi chú.</p>
+  </header>
 
-<form action="/action_page.php">
-
-  <!-- <input type="submit" value="Lưu"> -->
-</form>
-</div>
-
-<h1>Thứ 3</h1>
-<p>Nội dung</p>
-<h2>Lưu ý:</h2>
-<p>Nội dung.</p> <button class="buton">Lưu</button>
-<hr>
-
+  <main id="week" class="week" aria-label="Ghi chú theo ngày">
+    <noscript><p class="no-js">Trang này cần bật JavaScript để lưu ghi chú.</p></noscript>
+  </main>
 </body>
 </html>
-
