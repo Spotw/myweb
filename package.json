@@ -1,5 +1,5 @@
 {
-  "name": "ghi-chu-trong-tuan",
+  "name": "myweb",
   "version": "1.0.0",
   "description": "Ứng dụng ghi chú theo từng ngày trong tuần (web tĩnh, lưu bằng localStorage)",
   "private": true,
