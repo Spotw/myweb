@@ -2,6 +2,6 @@
   "name": "ghi-chu-trong-tuan",
   "compatibility_date": "2026-10-12",
   "assets": {
-    "directory": "./src"
+    "directory": "./public"
   }
 }
