@@ -3,7 +3,7 @@
 
   const DAYS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
   const STORAGE_PREFIX = 'ghichu_thu_';
-  const LEGACY_KEY = 'thu2'; // khóa cũ của bản đầu tiên (chỉ có Thứ 2)
+  const LEGACY_KEY = 'thu2';
   const AUTOSAVE_DELAY_MS = 800;
 
   // ---------- Lưu trữ (có bắt lỗi) ----------
@@ -34,7 +34,7 @@
     }
   }
 
-  // Chuyển dữ liệu Thứ 2 từ bản cũ sang khóa mới (chạy một lần)
+  //
   function migrateLegacy() {
     try {
       const legacy = localStorage.getItem(LEGACY_KEY);
