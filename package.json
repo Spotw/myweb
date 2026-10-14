@@ -1,12 +1,12 @@
 {
   "name": "myweb",
   "version": "1.0.0",
-  "description": "Ứng dụng ghi chú theo từng ngày trong tuần (web tĩnh, lưu bằng localStorage)",
+  "description": "Ghi chú trong tuần (Cloudflare Workers + KV)",
   "private": true,
   "scripts": {
-  "dev": "wrangler dev",
-  "deploy": "wrangler deploy"
-},
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
   "devDependencies": {
     "wrangler": "^4.0.0"
   }
