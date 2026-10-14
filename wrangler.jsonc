@@ -24,7 +24,7 @@
       // Không điền "id" thì wrangler tự tạo namespace khi deploy.
       // Nếu bị lỗi, tạo thủ công trong dashboard rồi thêm dòng dưới đây
       // (nhớ thêm dấu phẩy sau "NOTES"):
-      "db_simple": "26eba944cf9d44cba41078c1ed498efb"
+      "id": "26eba944cf9d44cba41078c1ed498efb"
     }
   ],
 
