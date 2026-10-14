@@ -126,9 +126,10 @@
     } //catch {
       //cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
       //showBanner('Không tải được ghi chú từ máy chủ.');
-    //} finally {
-     // bannerRetry.disabled = false;
-    //}
+    //} 
+     finally {
+     bannerRetry.disabled = false;
+    }
   }
 
   function init() {
