@@ -109,7 +109,7 @@
     banner.hidden = false;
   }
 
-  async function loadNotes() {
+   async function loadNotes() {
     banner.hidden = true;
     bannerRetry.disabled = true;
     try {
@@ -123,12 +123,12 @@
         c.area.disabled = false;
         c.btn.disabled = false;
       });
-    } catch {
-      cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
-      showBanner('Không tải được ghi chú từ máy chủ.');
-    } finally {
-      bannerRetry.disabled = false;
-    }
+    } //catch {
+      //cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
+      //showBanner('Không tải được ghi chú từ máy chủ.');
+    //} finally {
+     // bannerRetry.disabled = false;
+    //}
   }
 
   function init() {
