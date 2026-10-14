@@ -28,5 +28,14 @@
   // Bật log để xem lỗi trong dashboard (tùy chọn)
   "observability": {
     "enabled": true
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": false
+    }
   }
 }
