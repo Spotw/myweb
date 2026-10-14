@@ -20,7 +20,7 @@
   // Kho lưu ghi chú. Trong code gọi là env.NOTES
   "kv_namespaces": [
     {
-     "binding": "KV",
+     "binding": "NOTES",
       "id": "26eba944cf9d44cba41078c1ed498efb"
     }
   ],
