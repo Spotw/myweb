@@ -35,12 +35,12 @@ export default {
         } catch {
           return json({ error: 'Dữ liệu không hợp lệ' }, 400);
         }
-        if (!body || typeof body.content !== 'string') {
-          return json({ error: 'Thiếu trường content' }, 400);
-        }
-        if (body.content.length > MAX_LENGTH) {
-          return json({ error: 'Nội dung quá dài' }, 413);
-        }
+        //if (!body || typeof body.content !== 'string') {
+          //return json({ error: 'Thiếu trường content' }, 400);
+        //}
+        //if (body.content.length > MAX_LENGTH) {
+        //  return json({ error: 'Nội dung quá dài' }, 413);
+        //}
 
         const key = `day:${match[1]}`;
         if (body.content.trim() === '') {
