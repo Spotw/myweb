@@ -2,64 +2,40 @@
   'use strict';
 
   const DAYS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
-  const MAX_LEN = 2000; // khớp với giới hạn trong src/index.js
-  const API = '/api/notes';
+  const MAX_LENGTH = 5000; // phải khớp với giới hạn ở src/index.js
 
-  const timeFmt = new Intl.DateTimeFormat('vi-VN', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  });
-  const dateFmt = new Intl.DateTimeFormat('vi-VN', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-  });
-  const stampFmt = new Intl.DateTimeFormat('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false
-  });
+  const clockTime = document.getElementById('clock-time');
+  const clockDate = document.getElementById('clock-date');
+  const daysRoot = document.getElementById('days');
+  const banner = document.getElementById('banner');
+  const bannerText = document.getElementById('banner-text');
+  const bannerRetry = document.getElementById('banner-retry');
 
-  const cards = []; // { card, badge, area, btn, status }
-  let currentToday = -1;
+  const cards = [];
+
+  const pad = (n) => String(n).padStart(2, '0');
+
+  // getDay(): 0 = Chủ nhật ... 6 = Thứ 7  ->  0 = Thứ 2 ... 6 = Chủ nhật
+  const todayIndex = () => (new Date().getDay() + 6) % 7;
 
   // ---------- Đồng hồ ----------
-  function todayIndex() {
-    // getDay(): 0 = Chủ nhật ... 6 = Thứ 7  ->  0 = Thứ 2 ... 6 = Chủ nhật
-    return (new Date().getDay() + 6) % 7;
-  }
-
-  function markToday() {
-    const today = todayIndex();
-    if (today === currentToday) return;
-    currentToday = today;
-    cards.forEach((c, i) => {
-      c.card.classList.toggle('is-today', i === today);
-      c.badge.hidden = i !== today;
-    });
-  }
-
-  function startClock() {
-    const timeEl = document.getElementById('clock-time');
-    const dateEl = document.getElementById('clock-date');
-    const tick = () => {
-      const now = new Date();
-      timeEl.textContent = timeFmt.format(now);
-      dateEl.textContent = dateFmt.format(now);
-      markToday();
-    };
-    tick();
-    setInterval(tick, 1000);
-  }
-
-  // ---------- Thẻ từng ngày ----------
-  function setStatus(c, message, state) {
-    c.status.textContent = message;
-    c.status.classList.toggle('is-ok', state === 'ok');
-    c.status.classList.toggle('is-error', state === 'error');
-  }
-
-  function setLocked(locked) {
+  function tick() {
+    const now = new Date();
+    clockTime.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const idx = todayIndex();
+    clockDate.textContent = `${DAYS[idx]}, ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
     cards.forEach((c) => {
-      c.area.disabled = locked;
-      c.btn.disabled = locked;
-      c.area.placeholder = locked ? 'Đang tải...' : 'Nhập nội dung...';
+      const isToday = c.index === idx;
+      c.card.classList.toggle('is-today', isToday);
+      c.badge.hidden = !isToday;
     });
+  }
+
+  // ---------- Giao diện từng ngày ----------
+  function setStatus(c, message, kind) {
+    c.status.textContent = message;
+    c.status.classList.toggle('is-error', kind === 'error');
+    c.status.classList.toggle('is-dirty', kind === 'dirty');
   }
 
   function createCard(index) {
@@ -69,126 +45,106 @@
 
     const head = document.createElement('div');
     head.className = 'day-head';
-
     const title = document.createElement('h2');
     title.className = 'day-name';
     title.id = `day-title-${index}`;
     title.textContent = DAYS[index];
-
     const badge = document.createElement('span');
     badge.className = 'day-badge';
     badge.textContent = 'Hôm nay';
     badge.hidden = true;
-
     head.append(title, badge);
 
     const area = document.createElement('textarea');
     area.id = `content-${index}`;
-    area.name = `content-${index}`;
     area.rows = 3;
-    area.maxLength = MAX_LEN;
+    area.maxLength = MAX_LENGTH;
+    area.disabled = true;
+    area.placeholder = 'Đang tải...';
     area.setAttribute('aria-label', `Nội dung ${DAYS[index]}`);
 
     const foot = document.createElement('div');
     foot.className = 'day-foot';
-
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-save';
     btn.textContent = 'Lưu';
-
+    btn.disabled = true;
     const status = document.createElement('span');
     status.className = 'status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-
     foot.append(btn, status);
+
     card.append(head, area, foot);
 
-    const entry = { card, badge, area, btn, status };
-
-    btn.addEventListener('click', () => save(index));
-    area.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        save(index);
-      }
-    });
-
-    return entry;
+    const c = { index, card, badge, area, btn, status };
+    area.addEventListener('input', () => setStatus(c, 'Chưa lưu', 'dirty'));
+    btn.addEventListener('click', () => save(c));
+    return c;
   }
 
   // ---------- Gọi API (Worker + KV) ----------
-  async function save(index) {
-    const c = cards[index];
+  async function save(c) {
     c.btn.disabled = true;
     setStatus(c, 'Đang lưu...');
     try {
-      const res = await fetch(`${API}/${index}`, {
+      const res = await fetch(`/api/notes/${c.index}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: c.area.value })
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
-      setStatus(
-        c,
-        data.updatedAt ? `Đã lưu lúc ${stampFmt.format(new Date(data.updatedAt))}` : 'Đã lưu (ô trống)',
-        'ok'
-      );
-    } catch (err) {
-      const message = err instanceof TypeError ? 'Không kết nối được máy chủ' : err.message;
-      setStatus(c, `Không lưu được: ${message}`, 'error');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const now = new Date();
+      setStatus(c, `Đã lưu lúc ${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    } catch {
+      setStatus(c, 'Lưu thất bại, hãy thử lại.', 'error');
     } finally {
       c.btn.disabled = false;
     }
   }
 
-  async function load() {
-    const banner = document.getElementById('banner');
-    const bannerText = document.getElementById('banner-text');
-    banner.hidden = true;
-    setLocked(true);
+  function showBanner(message) {
+    bannerText.textContent = message;
+    banner.hidden = false;
+  }
 
+  async function loadNotes() {
+    banner.hidden = true;
+    bannerRetry.disabled = true;
     try {
-      const res = await fetch(API, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`Lỗi ${res.status}`);
+      const res = await fetch('/api/notes', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const notes = Array.isArray(data.notes) ? data.notes : [];
-
-      cards.forEach((c, i) => {
-        const note = notes[i] || {};
-        c.area.value = typeof note.content === 'string' ? note.content : '';
-        setStatus(
-          c,
-          note.updatedAt ? `Lưu lần cuối: ${stampFmt.format(new Date(note.updatedAt))}` : ''
-        );
+      cards.forEach((c) => {
+        c.area.value = typeof notes[c.index] === 'string' ? notes[c.index] : '';
+        c.area.placeholder = 'Nhập nội dung...';
+        c.area.disabled = false;
+        c.btn.disabled = false;
       });
-      setLocked(false);
     } catch {
-      bannerText.textContent = 'Không tải được ghi chú từ máy chủ.';
-      banner.hidden = false;
-      // Giữ các ô bị khóa để không ghi đè dữ liệu chưa tải được.
       cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
+      showBanner('Không tải được ghi chú từ máy chủ.');
+    } finally {
+      bannerRetry.disabled = false;
     }
   }
 
-  // ---------- Khởi tạo ----------
   function init() {
-    const root = document.getElementById('week');
-    if (!root) return;
-
     const fragment = document.createDocumentFragment();
     DAYS.forEach((_, index) => {
-      const entry = createCard(index);
-      cards.push(entry);
-      fragment.append(entry.card);
+      const c = createCard(index);
+      cards.push(c);
+      fragment.append(c.card);
     });
-    root.append(fragment);
+    daysRoot.append(fragment);
 
-    startClock();
-    document.getElementById('retry').addEventListener('click', load);
-    load();
+    tick();
+    setInterval(tick, 1000);
+
+    bannerRetry.addEventListener('click', loadNotes);
+    loadNotes();
   }
 
   document.addEventListener('DOMContentLoaded', init);
