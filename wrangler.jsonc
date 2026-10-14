@@ -1,16 +1,35 @@
 {
+  // Tên Worker, phải trùng với tên trong dashboard (địa chỉ myweb.<tài khoản>.workers.dev)
   "name": "myweb",
-  "compatibility_date": "2026-10-12",
-  "assets": {
-    "directory": "./public"
-  },
-"d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "duyvu_space",
-      "database_id": "bd876cf4-2279-434c-abdf-450b64c6aebb"
-    }
-  ]
-  
-}
 
+  // File code của Worker (phần API lưu vào KV)
+  "main": "src/index.js",
+
+  // Ngày cố định phiên bản runtime của Workers
+  "compatibility_date": "2026-10-12",
+
+  // Thư mục chứa file tĩnh (index.html, style.css, app.js)
+  "assets": {
+    "directory": "./public",
+    // Cho phép Worker gọi file tĩnh bằng env.ASSETS.fetch(...)
+    "binding": "ASSETS",
+    // Chỉ các đường dẫn /api/* chạy qua Worker, còn lại phục vụ thẳng file tĩnh
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Kho lưu ghi chú. Trong code gọi là env.NOTES
+  "kv_namespaces": [
+    {
+      "binding": "db_simple"
+      // Không điền "id" thì wrangler tự tạo namespace khi deploy.
+      // Nếu bị lỗi, tạo thủ công trong dashboard rồi thêm dòng dưới đây
+      // (nhớ thêm dấu phẩy sau "NOTES"):
+      // "id": "dán-ID-namespace-của-bạn-vào-đây"
+    }
+  ],
+
+  // Bật log để xem lỗi trong dashboard (tùy chọn)
+  "observability": {
+    "enabled": true
+  }
+}
