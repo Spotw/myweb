@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Ghi chú theo từng ngày trong tuần, lưu ngay trên trình duyệt của bạn.">
+  <meta name="description" content="Ghi chú theo từng ngày trong tuần.">
   <meta name="theme-color" content="#e9eef3">
-  <title>Ghi chú tuần</title>
+  <title>Ghi chú trong tuần</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,13 +14,21 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <header class="page-header">
-    <h1>Ghi chú tuần</h1>
-    <p class="page-hint">Ghi chú được lưu ngay trên trình duyệt này. Đổi máy hoặc xóa dữ liệu trình duyệt sẽ mất ghi chú.</p>
+  <header class="top">
+    <h1>Ghi chú trong tuần</h1>
+    <div class="clock">
+      <div id="clock-time" class="clock-time">--:--:--</div>
+      <div id="clock-date" class="clock-date"></div>
+    </div>
   </header>
 
+  <div id="banner" class="banner" role="alert" hidden>
+    <span>Không tải được ghi chú.</span>
+    <button type="button" id="retry" class="btn btn-save">Thử lại</button>
+  </div>
+
   <main id="week" class="week" aria-label="Ghi chú theo ngày">
-    <noscript><p class="no-js">Trang này cần bật JavaScript để lưu ghi chú.</p></noscript>
+    <noscript><p class="banner">Trang này cần bật JavaScript.</p></noscript>
   </main>
 </body>
 </html>
