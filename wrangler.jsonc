@@ -20,7 +20,7 @@
   // Kho lưu ghi chú. Trong code gọi là env.NOTES
   "kv_namespaces": [
     {
-      "binding": "BING"
+      "binding": "BING",
       // Không điền "id" thì wrangler tự tạo namespace khi deploy.
       // Nếu bị lỗi, tạo thủ công trong dashboard rồi thêm dòng dưới đây
       // (nhớ thêm dấu phẩy sau "NOTES"):
