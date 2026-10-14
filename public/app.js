@@ -59,8 +59,8 @@
     area.id = `content-${index}`;
     area.rows = 3;
     area.maxLength = MAX_LENGTH;
-    area.disabled = true;
-    area.placeholder = 'Đang tải...';
+    //area.disabled = true;
+    //area.placeholder = 'Đang tải...';
     area.setAttribute('aria-label', `Nội dung ${DAYS[index]}`);
 
     const foot = document.createElement('div');
@@ -123,10 +123,10 @@
         c.area.disabled = false;
         c.btn.disabled = false;
       });
-    } //catch {
-      //cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
-      //showBanner('Không tải được ghi chú từ máy chủ.');
-    //} 
+    } catch {
+      cards.forEach((c) => { c.area.placeholder = 'Chưa tải được dữ liệu'; });
+      showBanner('Không tải được ghi chú từ máy chủ.');
+    } 
      finally {
      bannerRetry.disabled = false;
     }
