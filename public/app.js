@@ -55,13 +55,13 @@
     badge.hidden = true;
     head.append(title, badge);
 
-    //const area = document.createElement('textarea');
-    //area.id = `content-${index}`;
-    //area.rows = 3;
-    //area.maxLength = MAX_LENGTH;
-    //area.disabled = true;
+    const area = document.createElement('textarea');
+    area.id = `content-${index}`;
+    area.rows = 3;
+    area.maxLength = MAX_LENGTH;
+    area.disabled = true;
     //area.placeholder = 'Đang tải...';
-    //area.setAttribute('aria-label', `Nội dung ${DAYS[index]}`);
+    area.setAttribute('aria-label', `Nội dung ${DAYS[index]}`);
 
     const foot = document.createElement('div');
     foot.className = 'day-foot';
