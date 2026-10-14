@@ -3,7 +3,7 @@
   "name": "myweb",
 
   // File code của Worker (phần API lưu vào KV)
-  //"main": "src/index.js",
+  "main": "src/index.js",
 
   // Ngày cố định phiên bản runtime của Workers
   "compatibility_date": "2026-10-12",
@@ -20,11 +20,11 @@
   // Kho lưu ghi chú. Trong code gọi là env.NOTES
   "kv_namespaces": [
     {
-      "binding": "db_simple"
+      "binding": "BING"
       // Không điền "id" thì wrangler tự tạo namespace khi deploy.
       // Nếu bị lỗi, tạo thủ công trong dashboard rồi thêm dòng dưới đây
       // (nhớ thêm dấu phẩy sau "NOTES"):
-      // "id": "dán-ID-namespace-của-bạn-vào-đây"
+      "db_simple": "26eba944cf9d44cba41078c1ed498efb"
     }
   ],
 
