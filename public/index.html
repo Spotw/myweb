@@ -3,31 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Ghi chú theo từng ngày trong tuần, lưu trên Cloudflare.">
-  <meta name="theme-color" content="#14233a">
-  <title>Ghi chú trong tuần</title>
+  <meta name="description" content="Lịch trình theo tháng với công việc được sắp xếp gọn gàng theo từng ngày.">
+  <meta name="theme-color" content="#f5f6f2">
+  <title>Lịch tháng — Lịch trình của bạn</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📝%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <div class="container">
-    <header class="clock" aria-label="Đồng hồ">
-      <div id="clock-time" class="clock-time">--:--:--</div>
-      <div id="clock-date" class="clock-date"></div>
-    </header>
-
-    <div id="banner" class="banner" role="alert" hidden>
-      <span id="banner-text"></span>
-      <button id="banner-retry" type="button" class="btn btn-retry">Thử lại</button>
-    </div>
-
-    <main id="days" class="days" aria-label="Ghi chú theo ngày">
-      <noscript><p class="no-js">Trang này cần bật JavaScript để hoạt động.</p></noscript>
-    </main>
+  <div id="root">
+    <noscript><p class="no-js">Trang này cần bật JavaScript để hoạt động.</p></noscript>
   </div>
 </body>
 </html>
