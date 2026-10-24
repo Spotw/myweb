@@ -4,9 +4,9 @@
 
 ## Cấu hình tài khoản
 
-Tài khoản được quản lý thủ công bằng hai Worker secrets; không ghi thông tin đăng nhập vào mã nguồn.
+Tài khoản được quản lý thủ công bằng Worker secrets; không ghi thông tin đăng nhập vào mã nguồn.
 
-1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Tên đăng nhập có thể dài tối đa 254 ký tự, bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, `@`, `+` hoặc `-`; không phân biệt chữ hoa/thường.
+1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Có thể bổ sung tài khoản trong `APP_USERS_EXTRA` để không phải thay thế danh sách tài khoản hiện tại. Tên đăng nhập có thể dài tối đa 254 ký tự, bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, `@`, `+` hoặc `-`; không phân biệt chữ hoa/thường.
    Ví dụ định dạng (hãy thay bằng thông tin thật của bạn):
 
    ```json

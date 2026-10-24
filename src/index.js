@@ -60,32 +60,39 @@ function getUsers(env) {
     throw new Error('AUTH_SECRET phải là chuỗi bí mật dài ít nhất 32 ký tự.');
   }
 
-  let users;
-  try {
-    users = JSON.parse(env.APP_USERS);
-  } catch {
-    throw new Error('Cấu hình APP_USERS không phải JSON hợp lệ.');
-  }
-
-  if (!users || typeof users !== 'object' || Array.isArray(users)) {
-    throw new Error('Cấu hình APP_USERS phải là một đối tượng JSON.');
-  }
-
   const normalizedUsers = new Map();
-  for (const [username, password] of Object.entries(users)) {
-    if (
-      !USERNAME_PATTERN.test(username) ||
-      typeof password !== 'string' ||
-      password.length < 1 ||
-      password.length > 1024
-    ) {
-      throw new Error('Cấu hình APP_USERS có tên tài khoản hoặc mật khẩu không hợp lệ.');
+  const userConfigs = [
+    ['APP_USERS', env.APP_USERS],
+    ['APP_USERS_EXTRA', env.APP_USERS_EXTRA]
+  ].filter(([, config]) => config);
+
+  for (const [configName, userConfig] of userConfigs) {
+    let users;
+    try {
+      users = JSON.parse(userConfig);
+    } catch {
+      throw new Error(`Cấu hình ${configName} không phải JSON hợp lệ.`);
     }
-    const normalizedName = username.toLowerCase();
-    if (normalizedUsers.has(normalizedName)) {
-      throw new Error('Cấu hình APP_USERS có tên tài khoản trùng nhau.');
+
+    if (!users || typeof users !== 'object' || Array.isArray(users)) {
+      throw new Error(`Cấu hình ${configName} phải là một đối tượng JSON.`);
     }
-    normalizedUsers.set(normalizedName, { username, password });
+
+    for (const [username, password] of Object.entries(users)) {
+      if (
+        !USERNAME_PATTERN.test(username) ||
+        typeof password !== 'string' ||
+        password.length < 1 ||
+        password.length > 1024
+      ) {
+        throw new Error(`Cấu hình ${configName} có tên tài khoản hoặc mật khẩu không hợp lệ.`);
+      }
+      const normalizedName = username.toLowerCase();
+      if (normalizedUsers.has(normalizedName)) {
+        throw new Error('Cấu hình tài khoản có tên đăng nhập trùng nhau.');
+      }
+      normalizedUsers.set(normalizedName, { username, password });
+    }
   }
 
   if (normalizedUsers.size === 0) throw new Error('Cấu hình APP_USERS chưa có tài khoản.');
