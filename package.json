@@ -1,11 +1,13 @@
 {
   "name": "myweb",
   "version": "1.0.0",
-  "description": "Ghi chú trong tuần (Cloudflare Workers + KV)",
+  "description": "Ghi chú trong tuần (Cloudflare Workers + D1)",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply db_duyvu --local",
+    "db:migrate:remote": "wrangler d1 migrations apply db_duyvu --remote"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

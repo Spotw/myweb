@@ -3,6 +3,14 @@ const MAX_LENGTH = 5000; // phải khớp với MAX_LENGTH trong public/app.js
 const MAX_TASKS_PER_DAY = 20;
 const MAX_TASK_TITLE_LENGTH = 100;
 
+const putValue = (db, key, value) =>
+  db.prepare(
+    'INSERT INTO web_data (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  ).bind(key, value).run();
+
+const deleteValue = (db, key) =>
+  db.prepare('DELETE FROM web_data WHERE key = ?').bind(key).run();
+
 const daysInMonth = (year, month) => {
   if (month === 2) {
     const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
@@ -49,6 +57,7 @@ const json = (data, status = 200) =>
 export default {
   async fetch(request, env) {
     try {
+      const db = env.DB;
       const { pathname } = new URL(request.url);
 
       // GET /api/tasks?month=YYYY-MM -> { tasks: { "YYYY-MM-DD": [...] } }
@@ -64,19 +73,24 @@ export default {
         const year = Number(match[1]);
         const monthNumber = Number(match[2]);
         const days = daysInMonth(year, monthNumber);
-        const entries = await Promise.all(
-          Array.from({ length: days }, async (_, index) => {
-            const day = String(index + 1).padStart(2, '0');
-            const date = `${month}-${day}`;
-            const value = await env.NOTES.get(`tasks:${date}`);
-            if (value === null) return [date, []];
-
-            const tasks = JSON.parse(value);
-            if (!isValidTaskList(tasks)) throw new Error(`Dữ liệu công việc không hợp lệ: ${date}`);
-            return [date, tasks];
-          })
+        const firstKey = `tasks:${month}-01`;
+        const lastKey = `tasks:${month}-${String(days).padStart(2, '0')}`;
+        const { results } = await db.prepare(
+          'SELECT key, value FROM web_data WHERE key >= ? AND key <= ?'
+        ).bind(firstKey, lastKey).all();
+        const tasksByDate = Object.fromEntries(
+          Array.from({ length: days }, (_, index) => [
+            `${month}-${String(index + 1).padStart(2, '0')}`,
+            []
+          ])
         );
-        return json({ tasks: Object.fromEntries(entries) });
+        for (const { key, value } of results) {
+          const date = key.slice('tasks:'.length);
+          const tasks = JSON.parse(value);
+          if (!isValidTaskList(tasks)) throw new Error(`Dữ liệu công việc không hợp lệ: ${date}`);
+          tasksByDate[date] = tasks;
+        }
+        return json({ tasks: tasksByDate });
       }
 
       // PUT /api/tasks/YYYY-MM-DD với body { "tasks": [...] }
@@ -100,9 +114,9 @@ export default {
 
         const key = `tasks:${year}-${month}-${day}`;
         if (body.tasks.length === 0) {
-          await env.NOTES.delete(key);
+          await deleteValue(db, key);
         } else {
-          await env.NOTES.put(key, JSON.stringify(body.tasks));
+          await putValue(db, key, JSON.stringify(body.tasks));
         }
         return json({ ok: true });
       }
@@ -110,10 +124,13 @@ export default {
       // GET /api/notes -> { notes: ["...", "...", ...] } (7 phần tử, Thứ 2 -> Chủ nhật)
       if (pathname === '/api/notes') {
         if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
-        const values = await Promise.all(
-          Array.from({ length: DAY_COUNT }, (_, i) => env.NOTES.get(`day:${i}`))
-        );
-        return json({ notes: values.map((v) => v ?? '') });
+        const keys = Array.from({ length: DAY_COUNT }, (_, i) => `day:${i}`);
+        const placeholders = keys.map(() => '?').join(', ');
+        const { results } = await db.prepare(
+          `SELECT key, value FROM web_data WHERE key IN (${placeholders})`
+        ).bind(...keys).all();
+        const notesByKey = Object.fromEntries(results.map(({ key, value }) => [key, value]));
+        return json({ notes: keys.map((key) => notesByKey[key] ?? '') });
       }
 
       // PUT /api/notes/:day (0..6) với body { "content": "..." }
@@ -136,15 +153,16 @@ export default {
 
         const key = `day:${match[1]}`;
         if (body.content.trim() === '') {
-          await env.NOTES.delete(key);
+          await deleteValue(db, key);
         } else {
-          await env.NOTES.put(key, body.content);
+          await putValue(db, key, body.content);
         }
         return json({ ok: true });
       }
 
       return json({ error: 'Not found' }, 404);
-    } catch {
+    } catch (error) {
+      console.error('Lỗi xử lý yêu cầu API:', error);
       return json({ error: 'Lỗi máy chủ' }, 500);
     }
   }

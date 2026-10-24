@@ -2,7 +2,7 @@
   // Tên Worker, phải trùng với tên trong dashboard (địa chỉ myweb.<tài khoản>.workers.dev)
   "name": "myweb",
 
-  // File code của Worker (phần API lưu vào KV)
+  // File code của Worker
   "main": "src/index.js",
 
   // Ngày cố định phiên bản runtime của Workers
@@ -17,11 +17,13 @@
     "run_worker_first": ["/api/*"]
   },
 
-  // Kho lưu ghi chú. Trong code gọi là env.NOTES
-  "kv_namespaces": [
+  // Cơ sở dữ liệu D1 dùng để lưu dữ liệu ứng dụng.
+  "d1_databases": [
     {
-     "binding": "NOTES",
-      "id": "26eba944cf9d44cba41078c1ed498efb"
+      "binding": "DB",
+      "database_name": "db_duyvu",
+      "database_id": "569b0708-7673-4d86-9ec4-8ff448f48f0e",
+      "migrations_dir": "migrations"
     }
   ],
 
