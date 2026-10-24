@@ -132,7 +132,323 @@
   const lunarDateLabel = (lunarDate) =>
     `${lunarDate.day}/${lunarDate.month}${lunarDate.isLeapMonth ? ' nhuận' : ''}`;
 
-  function App() {
+  async function apiRequest(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      cache: 'no-store',
+      headers: options.body
+        ? { 'Content-Type': 'application/json', ...options.headers }
+        : options.headers
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Yêu cầu thất bại (HTTP ${response.status}).`);
+    return data;
+  }
+
+  function LoginView({ onLogin, initialError = '' }) {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState(initialError);
+    const [submitting, setSubmitting] = useState(false);
+
+    async function submit(event) {
+      event.preventDefault();
+      setError('');
+      setSubmitting(true);
+      try {
+        const result = await apiRequest('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password })
+        });
+        onLogin(result.username);
+      } catch (loginError) {
+        setError(loginError.message);
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
+    return h('main', { className: 'login-shell' },
+      h('section', { className: 'login-card' },
+        h('span', { className: 'eyebrow' },
+          h('span', { className: 'eyebrow-dot', 'aria-hidden': 'true' }),
+          'KHÔNG GIAN LÀM VIỆC'
+        ),
+        h('h1', null, 'Chào mừng', h('br'), h('span', null, 'bạn trở lại.')),
+        h('p', { className: 'login-description' },
+          'Đăng nhập để xem lịch trình tháng và cổng thông tin dùng chung.'
+        ),
+        error && h('p', { className: 'login-error', role: 'alert' }, error),
+        h('form', { className: 'login-form', onSubmit: submit },
+          h('label', { htmlFor: 'login-username' }, 'Tên tài khoản'),
+          h('input', {
+            id: 'login-username',
+            name: 'username',
+            autoComplete: 'username',
+            maxLength: 32,
+            value: username,
+            onChange: (event) => setUsername(event.target.value),
+            required: true
+          }),
+          h('label', { htmlFor: 'login-password' }, 'Mật khẩu'),
+          h('input', {
+            id: 'login-password',
+            name: 'password',
+            type: 'password',
+            autoComplete: 'current-password',
+            value: password,
+            onChange: (event) => setPassword(event.target.value),
+            required: true
+          }),
+          h('button', { className: 'btn btn-save login-submit', type: 'submit', disabled: submitting },
+            submitting ? 'Đang đăng nhập...' : 'Đăng nhập'
+          )
+        ),
+        h('p', { className: 'login-hint' }, 'Tài khoản được cấp phát bởi quản trị viên.')
+      )
+    );
+  }
+
+  function EntriesPortal() {
+    const [entries, setEntries] = useState([]);
+    const [form, setForm] = useState({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
+    const [query, setQuery] = useState('');
+    const [category, setCategory] = useState('Tất cả');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(null);
+    const [notice, setNotice] = useState(null);
+
+    async function loadEntries() {
+      setLoading(true);
+      try {
+        const allEntries = await apiRequest('/api/entries');
+        setEntries(allEntries);
+      } catch (loadError) {
+        setNotice({ type: 'error', text: loadError.message });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    useEffect(() => { loadEntries(); }, []);
+
+    const categories = [...new Set(entries.map((entry) => entry.loai_thong_tin))];
+    const normalizedQuery = query.trim().toLocaleLowerCase('vi');
+    const filteredEntries = entries.filter((entry) => {
+      const matchesCategory = category === 'Tất cả' || entry.loai_thong_tin === category;
+      const matchesQuery = !normalizedQuery ||
+        `${entry.mo_ta} ${entry.loai_thong_tin} ${entry.noi_dung}`
+          .toLocaleLowerCase('vi').includes(normalizedQuery);
+      return matchesCategory && matchesQuery;
+    });
+
+    async function saveEntry(event) {
+      event.preventDefault();
+      setSaving(true);
+      setNotice(null);
+      try {
+        await apiRequest('/api/entries', {
+          method: 'POST',
+          body: JSON.stringify(form)
+        });
+        setForm({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
+        setNotice({ type: 'success', text: 'Đã lưu thông tin vào cổng thông tin dùng chung.' });
+        await loadEntries();
+      } catch (saveError) {
+        setNotice({ type: 'error', text: saveError.message });
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function deleteEntry(id) {
+      if (!window.confirm('Bạn có chắc muốn xóa thông tin dùng chung này không?')) return;
+      setDeleting(id);
+      setNotice(null);
+      try {
+        await apiRequest(`/api/entries/${id}`, { method: 'DELETE' });
+        setEntries((current) => current.filter((entry) => entry.id !== id));
+        setNotice({ type: 'success', text: 'Đã xóa thông tin khỏi cổng thông tin dùng chung.' });
+      } catch (deleteError) {
+        setNotice({ type: 'error', text: deleteError.message });
+      } finally {
+        setDeleting(null);
+      }
+    }
+
+    return h('main', { className: 'page-shell portal-shell' },
+      h('div', { className: 'container' },
+        h('section', { className: 'portal-intro' },
+          h('div', null,
+            h('span', { className: 'section-kicker' }, 'DỮ LIỆU DÙNG CHUNG'),
+            h('h1', null, 'Cổng thông tin'),
+            h('p', null, 'Thông tin tại đây được lưu vào kho dữ liệu dùng chung.')
+          ),
+          h('div', { className: 'portal-count' },
+            h('strong', null, String(entries.length)),
+            h('span', null, 'mục đã lưu')
+          )
+        ),
+        notice && h('div', {
+          className: `portal-notice ${notice.type}`,
+          role: notice.type === 'error' ? 'alert' : 'status'
+        }, notice.text),
+        h('div', { className: 'portal-grid' },
+          h('section', { className: 'portal-panel' },
+            h('div', { className: 'portal-panel-heading' },
+              h('div', null, h('span', { className: 'section-kicker' }, 'KHO THÔNG TIN'), h('h2', null, 'Danh sách')),
+              h('span', { className: 'portal-count-pill' }, `${filteredEntries.length} mục`)
+            ),
+            h('div', { className: 'portal-filters' },
+              h('input', {
+                type: 'search',
+                value: query,
+                onChange: (event) => setQuery(event.target.value),
+                placeholder: 'Tìm thông tin...',
+                'aria-label': 'Tìm thông tin'
+              }),
+              h('select', {
+                value: category,
+                onChange: (event) => setCategory(event.target.value),
+                'aria-label': 'Lọc theo loại thông tin'
+              },
+              h('option', { value: 'Tất cả' }, 'Tất cả loại'),
+              categories.map((name) => h('option', { value: name, key: name }, name)))
+            ),
+            loading
+              ? h('p', { className: 'portal-empty' }, 'Đang tải thông tin...')
+              : filteredEntries.length === 0
+                ? h('p', { className: 'portal-empty' },
+                    entries.length ? 'Không tìm thấy thông tin phù hợp.' : 'Chưa có thông tin nào được lưu.'
+                  )
+                : h('div', { className: 'portal-entry-list' },
+                    filteredEntries.map((entry) => h('article', { className: 'portal-entry', key: entry.id },
+                      h('div', { className: 'portal-entry-heading' },
+                        h('span', { className: 'portal-entry-category' }, entry.loai_thong_tin),
+                        h('time', null, entry.created_at)
+                      ),
+                      h('h3', null, entry.mo_ta),
+                      entry.noi_dung && h('p', null, entry.noi_dung),
+                      h('button', {
+                        className: 'portal-delete',
+                        type: 'button',
+                        onClick: () => deleteEntry(entry.id),
+                        disabled: deleting === entry.id,
+                        'aria-label': `Xóa ${entry.mo_ta}`
+                      }, deleting === entry.id ? 'Đang xóa...' : 'Xóa')
+                    ))
+                  )
+          ),
+          h('aside', { className: 'portal-panel portal-form-panel' },
+            h('span', { className: 'section-kicker' }, 'ĐÓNG GÓP THÔNG TIN'),
+            h('h2', null, 'Thêm thông tin'),
+            h('p', { className: 'portal-form-description' }, 'Nội dung sẽ được chia sẻ với mọi tài khoản đã đăng nhập.'),
+            h('form', { className: 'portal-form', onSubmit: saveEntry },
+              h('label', { htmlFor: 'entry-category' }, 'Loại thông tin'),
+              h('input', {
+                id: 'entry-category',
+                value: form.loai_thong_tin,
+                onChange: (event) => setForm((current) => ({ ...current, loai_thong_tin: event.target.value })),
+                maxLength: 100,
+                required: true
+              }),
+              h('label', { htmlFor: 'entry-description' }, 'Mô tả ngắn'),
+              h('input', {
+                id: 'entry-description',
+                value: form.mo_ta,
+                onChange: (event) => setForm((current) => ({ ...current, mo_ta: event.target.value })),
+                maxLength: 300,
+                required: true
+              }),
+              h('label', { htmlFor: 'entry-content' }, 'Nội dung chi tiết'),
+              h('textarea', {
+                id: 'entry-content',
+                value: form.noi_dung,
+                onChange: (event) => setForm((current) => ({ ...current, noi_dung: event.target.value })),
+                maxLength: 10000,
+                rows: 6
+              }),
+              h('button', { className: 'btn btn-save portal-submit', type: 'submit', disabled: saving || loading },
+                saving ? 'Đang lưu...' : 'Lưu thông tin'
+              )
+            )
+          )
+        )
+      )
+    );
+  }
+
+  function Workspace({ username, onLogout }) {
+    const [activeView, setActiveView] = useState('calendar');
+    const [logoutError, setLogoutError] = useState('');
+
+    async function logout() {
+      setLogoutError('');
+      try {
+        await apiRequest('/api/auth/logout', { method: 'POST' });
+        onLogout();
+      } catch (error) {
+        setLogoutError(error.message);
+      }
+    }
+
+    return h('div', { className: 'workspace' },
+      h('header', { className: 'workspace-bar' },
+        h('a', { className: 'workspace-brand', href: '/', 'aria-label': 'Trang chủ' },
+          h('span', { className: 'workspace-brand-mark' }, '✳'),
+          h('span', null, 'Không gian chung')
+        ),
+        h('nav', { className: 'workspace-tabs', 'aria-label': 'Tính năng' },
+          h('button', {
+            type: 'button',
+            className: `workspace-tab${activeView === 'calendar' ? ' active' : ''}`,
+            onClick: () => setActiveView('calendar')
+          }, 'Lịch trình tháng'),
+          h('button', {
+            type: 'button',
+            className: `workspace-tab${activeView === 'entries' ? ' active' : ''}`,
+            onClick: () => setActiveView('entries')
+          }, 'Cổng thông tin')
+        ),
+        h('div', { className: 'workspace-account' },
+          h('span', { className: 'workspace-username' }, username),
+          h('button', { className: 'workspace-logout', type: 'button', onClick: logout }, 'Đăng xuất')
+        )
+      ),
+      logoutError && h('p', { className: 'workspace-error', role: 'alert' }, logoutError),
+      activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal)
+    );
+  }
+
+  function AuthenticatedApp() {
+    const [username, setUsername] = useState(null);
+    const [checking, setChecking] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+      let active = true;
+      apiRequest('/api/auth/session')
+        .then((session) => {
+          if (active && session.authenticated) setUsername(session.username);
+        })
+        .catch((sessionError) => {
+          if (active) setError(sessionError.message);
+        })
+        .finally(() => {
+          if (active) setChecking(false);
+        });
+      return () => { active = false; };
+    }, []);
+
+    if (checking) {
+      return h('main', { className: 'login-shell' }, h('p', { className: 'login-loading' }, 'Đang kiểm tra phiên đăng nhập...'));
+    }
+    if (username) return h(Workspace, { username, onLogout: () => setUsername(null) });
+    return h(LoginView, { onLogin: setUsername, initialError: error });
+  }
+
+  function CalendarApp() {
     const [today, setToday] = useState(() => new Date());
     const [viewMonth, setViewMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     const [tasksByDate, setTasksByDate] = useState({});
@@ -383,7 +699,21 @@
               return h('section', {
                 className: `calendar-cell${isToday ? ' is-today' : ''}${tasks.length ? ' has-tasks' : ''}`,
                 key: date,
-                'aria-label': `${day} ${MONTHS[month]}, ngày ${lunarDateLabel(lunarDate)} âm lịch${tasks.length ? `, ${tasks.length} công việc` : ''}`
+                role: 'group',
+                tabIndex: 0,
+                'aria-label': `${day} ${MONTHS[month]}, ngày ${lunarDateLabel(lunarDate)} âm lịch${tasks.length ? `, ${tasks.length} công việc` : ''}`,
+                onClick: (event) => {
+                  if (!event.target.closest('button')) openDialog(date);
+                },
+                onKeyDown: (event) => {
+                  if (
+                    event.target === event.currentTarget &&
+                    (event.key === 'Enter' || event.key === ' ')
+                  ) {
+                    event.preventDefault();
+                    openDialog(date);
+                  }
+                }
               },
               h('div', { className: 'cell-top' },
                 h('div', { className: 'cell-date-labels' },
@@ -530,5 +860,5 @@
     );
   }
 
-  ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+  ReactDOM.createRoot(document.getElementById('root')).render(h(AuthenticatedApp));
 })();
