@@ -4,7 +4,7 @@ const MAX_TASKS_PER_DAY = 20;
 const MAX_TASK_TITLE_LENGTH = 100;
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_COOKIE = 'myweb_session';
-const USERNAME_PATTERN = /^[A-Za-z0-9_]{1,32}$/;
+const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
 const encoder = new TextEncoder();
 
@@ -191,7 +191,11 @@ const tableForUser = (username) => {
 };
 
 async function ensureScheduleTable(db, username) {
-  const table = tableForUser(username);
+  const usernameHash = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', encoder.encode(username.toLowerCase()))
+  );
+  const suffix = Array.from(usernameHash, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const table = tableForUser(suffix);
   await db.prepare(
     `CREATE TABLE IF NOT EXISTS "${table}" (date TEXT PRIMARY KEY, tasks TEXT NOT NULL)`
   ).run();
@@ -220,7 +224,7 @@ async function handleAuth(request, env, pathname) {
       !body ||
       typeof body.username !== 'string' ||
       typeof body.password !== 'string' ||
-      body.username.length > 32 ||
+      body.username.length > 254 ||
       body.password.length > 1024
     ) {
       return json({ error: 'Tên tài khoản hoặc mật khẩu không chính xác.' }, 400);

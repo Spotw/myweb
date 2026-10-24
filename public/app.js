@@ -185,7 +185,7 @@
             id: 'login-username',
             name: 'username',
             autoComplete: 'username',
-            maxLength: 32,
+            maxLength: 254,
             value: username,
             onChange: (event) => setUsername(event.target.value),
             required: true

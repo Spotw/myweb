@@ -6,7 +6,7 @@
 
 Tài khoản được quản lý thủ công bằng hai Worker secrets; không ghi thông tin đăng nhập vào mã nguồn.
 
-1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Tên tài khoản chỉ gồm chữ ASCII, số hoặc dấu gạch dưới, dài 1–32 ký tự và không phân biệt chữ hoa/thường.
+1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Tên đăng nhập có thể dài tối đa 254 ký tự, bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, `@`, `+` hoặc `-`; không phân biệt chữ hoa/thường.
    Ví dụ định dạng (hãy thay bằng thông tin thật của bạn):
 
    ```json
@@ -41,6 +41,6 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
-Lịch của từng tài khoản được lưu trong bảng riêng có dạng `schedule_<tên_tài_khoản>`; bảng tự tạo khi tài khoản mở lịch lần đầu. Cổng thông tin đọc và ghi vào bảng `entries` dùng chung. Các bản ghi lịch cũ trong `web_data` vẫn được giữ nguyên nhưng không thể tự gán cho một tài khoản; lịch từng tài khoản bắt đầu riêng sau khi bật đăng nhập.
+Lịch của từng tài khoản được lưu trong bảng riêng có dạng `schedule_<sha256_tên_tài_khoản_viết_thường>`; bảng tự tạo khi tài khoản mở lịch lần đầu. Tên bảng được băm để tên đăng nhập (kể cả email) không thể tác động đến SQL. Cổng thông tin đọc và ghi vào bảng `entries` dùng chung. Các bản ghi lịch cũ trong `web_data` vẫn được giữ nguyên nhưng không thể tự gán cho một tài khoản; lịch từng tài khoản bắt đầu riêng sau khi bật đăng nhập.
 
 Địa chỉ `icollector.duyvu2003dk.workers.dev` được cấu hình chuyển tiếp tạm thời sang `myweb.duyvu2003dk.workers.dev`. Cần triển khai thay đổi Worker chuyển tiếp trong dự án iCollector để địa chỉ cũ mở trang hợp nhất.
