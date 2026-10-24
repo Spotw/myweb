@@ -202,6 +202,14 @@ button {
   font-size: 12px;
 }
 
+.clock-lunar-date {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  color: #e1eadc;
+  font-size: 12px;
+}
+
 .clock-decoration {
   position: absolute;
   right: -54px;
@@ -386,6 +394,13 @@ button {
   gap: 3px;
 }
 
+.cell-date-labels {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
 .date-number {
   display: grid;
   width: 24px;
@@ -397,6 +412,14 @@ button {
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.lunar-date {
+  overflow: hidden;
+  color: #89948a;
+  font-size: 8px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .today-number-badge {
@@ -656,6 +679,13 @@ button {
   font-size: 12px;
 }
 
+.dialog-lunar-date {
+  margin: -12px 0 18px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .dialog-task-list {
   display: grid;
   gap: 7px;
@@ -874,6 +904,10 @@ button {
     font-size: 11px;
   }
 
+  .clock-lunar-date {
+    font-size: 11px;
+  }
+
   .calendar-section {
     padding: 14px 9px;
     border-radius: 18px;
@@ -940,10 +974,18 @@ button {
     justify-content: center;
   }
 
+  .cell-date-labels {
+    gap: 2px;
+  }
+
   .date-number {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     font-size: 9px;
+  }
+
+  .lunar-date {
+    font-size: 7px;
   }
 
   .add-task-button {

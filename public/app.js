@@ -8,9 +8,129 @@
   ];
   const MAX_TASKS_PER_DAY = 20;
   const MAX_TASK_TITLE_LENGTH = 100;
+  const LUNAR_TIME_ZONE = 7;
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
   const pad = (value) => String(value).padStart(2, '0');
   const dateKey = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`;
+
+  function julianDay(day, month, year) {
+    const adjustedMonth = Math.floor((14 - month) / 12);
+    const adjustedYear = year + 4800 - adjustedMonth;
+    const adjustedMonthNumber = month + 12 * adjustedMonth - 3;
+    let julian = day + Math.floor((153 * adjustedMonthNumber + 2) / 5) +
+      365 * adjustedYear + Math.floor(adjustedYear / 4) -
+      Math.floor(adjustedYear / 100) + Math.floor(adjustedYear / 400) - 32045;
+    if (julian < 2299161) {
+      julian = day + Math.floor((153 * adjustedMonthNumber + 2) / 5) +
+        365 * adjustedYear + Math.floor(adjustedYear / 4) - 32083;
+    }
+    return julian;
+  }
+
+  function newMoonDay(k) {
+    const t = k / 1236.85;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const dr = Math.PI / 180;
+    let jd = 2415020.75933 + 29.53058868 * k + 0.0001178 * t2 - 0.000000155 * t3;
+    jd += 0.00033 * Math.sin((166.56 + 132.87 * t - 0.009173 * t2) * dr);
+
+    const meanAnomaly = 359.2242 + 29.10535608 * k - 0.0000333 * t2 - 0.00000347 * t3;
+    const moonAnomaly = 306.0253 + 385.81691806 * k + 0.0107306 * t2 + 0.00001236 * t3;
+    const latitudeArgument = 21.2964 + 390.67050646 * k - 0.0016528 * t2 - 0.00000239 * t3;
+    const correction = (0.1734 - 0.000393 * t) * Math.sin(meanAnomaly * dr) +
+      0.0021 * Math.sin(2 * meanAnomaly * dr) -
+      0.4068 * Math.sin(moonAnomaly * dr) +
+      0.0161 * Math.sin(2 * moonAnomaly * dr) -
+      0.0004 * Math.sin(3 * moonAnomaly * dr) +
+      0.0104 * Math.sin(2 * latitudeArgument * dr) -
+      0.0051 * Math.sin((meanAnomaly + moonAnomaly) * dr) -
+      0.0074 * Math.sin((meanAnomaly - moonAnomaly) * dr) +
+      0.0004 * Math.sin((2 * latitudeArgument + meanAnomaly) * dr) -
+      0.0004 * Math.sin((2 * latitudeArgument - meanAnomaly) * dr) -
+      0.0006 * Math.sin((2 * latitudeArgument + moonAnomaly) * dr) +
+      0.0010 * Math.sin((2 * latitudeArgument - moonAnomaly) * dr);
+    const deltaT = t < -11
+      ? 0.001 + 0.000839 * t + 0.0002261 * t2 - 0.00000845 * t3 - 0.000000081 * t2 * t2
+      : -0.000278 + 0.000265 * t + 0.000262 * t2;
+    return Math.floor(jd + correction - deltaT + 0.5 + LUNAR_TIME_ZONE / 24);
+  }
+
+  function sunLongitudeSector(dayNumber) {
+    const t = (dayNumber - 2451545.5 - LUNAR_TIME_ZONE / 24) / 36525;
+    const t2 = t * t;
+    const dr = Math.PI / 180;
+    const meanAnomaly = 357.52910 + 35999.05030 * t - 0.0001559 * t2 - 0.00000048 * t2 * t;
+    const meanLongitude = 280.46645 + 36000.76983 * t + 0.0003032 * t2;
+    const equationOfCenter = (1.914600 - 0.004817 * t - 0.000014 * t2) * Math.sin(meanAnomaly * dr) +
+      (0.019993 - 0.000101 * t) * Math.sin(2 * meanAnomaly * dr) +
+      0.000290 * Math.sin(3 * meanAnomaly * dr);
+    let longitude = (meanLongitude + equationOfCenter) * dr;
+    longitude -= 2 * Math.PI * Math.floor(longitude / (2 * Math.PI));
+    return Math.floor(longitude / Math.PI * 6);
+  }
+
+  function lunarMonth11(year) {
+    const offset = julianDay(31, 12, year) - 2415021;
+    const k = Math.floor(offset / 29.530588853);
+    let monthStart = newMoonDay(k);
+    if (sunLongitudeSector(monthStart) >= 9) monthStart = newMoonDay(k - 1);
+    return monthStart;
+  }
+
+  function leapMonthOffset(monthStart) {
+    const k = Math.floor(0.5 + (monthStart - 2415021) / 29.530588853);
+    let previousSector = -1;
+    for (let month = 1; month < 14; month += 1) {
+      const sector = sunLongitudeSector(newMoonDay(k + month));
+      if (sector === previousSector) return month - 1;
+      previousSector = sector;
+    }
+    throw new Error('Không xác định được tháng nhuận âm lịch.');
+  }
+
+  function toLunarDate(day, month, year) {
+    const dayNumber = julianDay(day, month, year);
+    let k = Math.floor((dayNumber - 2415021.076998695) / 29.530588853);
+    let monthStart = newMoonDay(k);
+    while (monthStart > dayNumber) {
+      k -= 1;
+      monthStart = newMoonDay(k);
+    }
+    while (newMoonDay(k + 1) <= dayNumber) {
+      k += 1;
+      monthStart = newMoonDay(k);
+    }
+
+    let month11 = lunarMonth11(year);
+    let nextMonth11 = month11;
+    let lunarYear;
+    if (month11 >= monthStart) {
+      lunarYear = year;
+      month11 = lunarMonth11(year - 1);
+    } else {
+      lunarYear = year + 1;
+      nextMonth11 = lunarMonth11(year + 1);
+    }
+
+    const lunarDay = dayNumber - monthStart + 1;
+    const monthOffset = Math.floor((monthStart - month11) / 29);
+    let lunarMonth = monthOffset + 11;
+    let isLeapMonth = false;
+    if (nextMonth11 - month11 > 365) {
+      const leapOffset = leapMonthOffset(month11);
+      if (monthOffset >= leapOffset) {
+        lunarMonth = monthOffset + 10;
+        isLeapMonth = monthOffset === leapOffset;
+      }
+    }
+    if (lunarMonth > 12) lunarMonth -= 12;
+    if (lunarMonth >= 11 && monthOffset < 4) lunarYear -= 1;
+    return { day: lunarDay, month: lunarMonth, year: lunarYear, isLeapMonth };
+  }
+
+  const lunarDateLabel = (lunarDate) =>
+    `${lunarDate.day}/${lunarDate.month}${lunarDate.isLeapMonth ? ' nhuận' : ''}`;
 
   function App() {
     const [today, setToday] = useState(() => new Date());
@@ -29,6 +149,7 @@
     const month = viewMonth.getMonth();
     const monthKey = `${year}-${pad(month + 1)}`;
     const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayLunarDate = toLunarDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
     const monthTasks = Object.entries(tasksByDate)
       .filter(([date]) => date.startsWith(`${monthKey}-`))
       .flatMap(([, tasks]) => tasks);
@@ -202,6 +323,9 @@
             h('div', { className: 'clock-date' },
               `${WEEKDAYS[(today.getDay() + 6) % 7]}, ${pad(today.getDate())}/${pad(today.getMonth() + 1)}/${today.getFullYear()}`
             ),
+            h('div', { className: 'clock-lunar-date' },
+              `Âm lịch: ${lunarDateLabel(todayLunarDate)}`
+            ),
             h('div', { className: 'clock-decoration', 'aria-hidden': 'true' })
           )
         ),
@@ -250,6 +374,7 @@
             calendarDays.map((day, index) => {
               if (!day) return h('div', { className: 'calendar-cell is-empty', key: `empty-${index}` });
               const date = dateKey(year, month, day);
+              const lunarDate = toLunarDate(day, month + 1, year);
               const tasks = tasksByDate[date] || [];
               const isToday = date === todayKey;
               const visibleTasks = tasks.slice(0, 2);
@@ -258,10 +383,16 @@
               return h('section', {
                 className: `calendar-cell${isToday ? ' is-today' : ''}${tasks.length ? ' has-tasks' : ''}`,
                 key: date,
-                'aria-label': `${day} ${MONTHS[month]}${tasks.length ? `, ${tasks.length} công việc` : ''}`
+                'aria-label': `${day} ${MONTHS[month]}, ngày ${lunarDateLabel(lunarDate)} âm lịch${tasks.length ? `, ${tasks.length} công việc` : ''}`
               },
               h('div', { className: 'cell-top' },
-                h('span', { className: `date-number${isToday ? ' today-number-badge' : ''}` }, day),
+                h('div', { className: 'cell-date-labels' },
+                  h('span', { className: `date-number${isToday ? ' today-number-badge' : ''}` }, day),
+                  h('span', {
+                    className: 'lunar-date',
+                    title: `Ngày ${lunarDateLabel(lunarDate)} âm lịch`
+                  }, `${lunarDateLabel(lunarDate)} ÂL`)
+                ),
                 h('button', {
                   type: 'button',
                   className: 'add-task-button',
@@ -335,6 +466,13 @@
       }, '×'),
       h('span', { className: 'section-kicker' }, 'THÊM VÀO LỊCH'),
       h('h2', { id: 'dialog-title' }, `${pad(Number(activeDate.slice(-2)))}/${pad(month + 1)}/${year}`),
+      h('p', { className: 'dialog-lunar-date' },
+        `Âm lịch: ${lunarDateLabel(toLunarDate(
+          Number(activeDate.slice(-2)),
+          Number(activeDate.slice(5, 7)),
+          Number(activeDate.slice(0, 4))
+        ))}`
+      ),
       h('p', { className: 'dialog-description' }, 'Việc gì bạn muốn nhớ làm vào ngày này?'),
       dayErrors[activeDate] && h('p', { className: 'dialog-error', role: 'alert' }, dayErrors[activeDate]),
       selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
