@@ -391,7 +391,7 @@
                   h('span', {
                     className: 'lunar-date',
                     title: `Ngày ${lunarDateLabel(lunarDate)} âm lịch`
-                  }, `${lunarDateLabel(lunarDate)} ÂL`)
+                  }, lunarDateLabel(lunarDate))
                 ),
                 h('button', {
                   type: 'button',
