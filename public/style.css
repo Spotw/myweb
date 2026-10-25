@@ -1514,6 +1514,33 @@ button {
   margin: 16px 0;
 }
 
+.portal-views {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f2f4ef;
+}
+
+.portal-views button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #69746a;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.portal-views button.active {
+  background: #fff;
+  color: var(--green-dark);
+  box-shadow: 0 1px 4px rgba(56, 67, 52, 0.09);
+}
+
 .portal-entry-list {
   display: grid;
   gap: 10px;
@@ -1553,7 +1580,8 @@ button {
   overflow-wrap: anywhere;
 }
 
-.portal-delete {
+.portal-delete,
+.portal-restore {
   position: absolute;
   top: 12px;
   right: 11px;
@@ -1568,6 +1596,14 @@ button {
 
 .portal-delete:hover {
   background: #fff0ec;
+}
+
+.portal-restore {
+  color: var(--green-dark);
+}
+
+.portal-restore:hover {
+  background: var(--green-soft);
 }
 
 .portal-empty {

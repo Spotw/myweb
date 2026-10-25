@@ -8,6 +8,10 @@
   // Ngày cố định phiên bản runtime của Workers
   "compatibility_date": "2026-10-12",
 
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+
   // Thư mục chứa file tĩnh (index.html, style.css, app.js)
   "assets": {
     "directory": "./public",

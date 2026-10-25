@@ -483,10 +483,20 @@ async function handleSchedule(request, db, username, pathname, url) {
 }
 
 async function handleEntries(request, db, pathname) {
+  if (pathname === '/api/entries/trash') {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+    const { results } = await db.prepare(
+      `SELECT id, mo_ta, loai_thong_tin, noi_dung, created_at, deleted_at
+       FROM entries WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC`
+    ).all();
+    return json(results);
+  }
+
   if (pathname === '/api/entries') {
     if (request.method === 'GET') {
       const { results } = await db.prepare(
-        'SELECT id, mo_ta, loai_thong_tin, noi_dung, created_at FROM entries ORDER BY id DESC'
+        `SELECT id, mo_ta, loai_thong_tin, noi_dung, created_at
+         FROM entries WHERE deleted_at IS NULL ORDER BY id DESC`
       ).all();
       return json(results);
     }
@@ -518,6 +528,22 @@ async function handleEntries(request, db, pathname) {
     return json({ ok: true, id: result.meta.last_row_id }, 201);
   }
 
+  const restoreMatch = pathname.match(/^\/api\/entries\/(\d+)\/restore$/);
+  if (restoreMatch) {
+    if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
+    const id = Number(restoreMatch[1]);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      return json({ error: 'Mã thông tin không hợp lệ.' }, 400);
+    }
+    const result = await db.prepare(
+      'UPDATE entries SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL'
+    ).bind(id).run();
+    if (!result.meta.changes) {
+      return json({ error: 'Thông tin này không còn trong thùng rác.' }, 404);
+    }
+    return json({ ok: true });
+  }
+
   const deleteMatch = pathname.match(/^\/api\/entries\/(\d+)$/);
   if (deleteMatch) {
     if (request.method !== 'DELETE') return json({ error: 'Method not allowed' }, 405);
@@ -525,7 +551,9 @@ async function handleEntries(request, db, pathname) {
     if (!Number.isSafeInteger(id) || id < 1) {
       return json({ error: 'Mã thông tin không hợp lệ.' }, 400);
     }
-    const result = await db.prepare('DELETE FROM entries WHERE id = ?').bind(id).run();
+    const result = await db.prepare(
+      "UPDATE entries SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL"
+    ).bind(id).run();
     if (!result.meta.changes) {
       return json({ error: 'Thông tin này không còn tồn tại.' }, 404);
     }
@@ -569,6 +597,12 @@ async function handleLegacyNotes(request, db, pathname) {
 }
 
 export default {
+  async scheduled(controller, env) {
+    await env.DB.prepare(
+      "DELETE FROM entries WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', '-30 days')"
+    ).run();
+  },
+
   async fetch(request, env) {
     try {
       const url = new URL(request.url);

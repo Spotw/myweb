@@ -211,19 +211,26 @@
 
   function EntriesPortal() {
     const [entries, setEntries] = useState([]);
+    const [trashEntries, setTrashEntries] = useState([]);
     const [form, setForm] = useState({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState('Tất cả');
+    const [view, setView] = useState('entries');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(null);
+    const [restoring, setRestoring] = useState(null);
     const [notice, setNotice] = useState(null);
 
     async function loadEntries() {
       setLoading(true);
       try {
-        const allEntries = await apiRequest('/api/entries');
+        const [allEntries, deletedEntries] = await Promise.all([
+          apiRequest('/api/entries'),
+          apiRequest('/api/entries/trash')
+        ]);
         setEntries(allEntries);
+        setTrashEntries(deletedEntries);
       } catch (loadError) {
         setNotice({ type: 'error', text: loadError.message });
       } finally {
@@ -263,17 +270,32 @@
     }
 
     async function deleteEntry(id) {
-      if (!window.confirm('Bạn có chắc muốn xóa thông tin dùng chung này không?')) return;
+      if (!window.confirm('Chuyển thông tin này vào thùng rác? Bạn có thể khôi phục trong vòng 30 ngày.')) return;
       setDeleting(id);
       setNotice(null);
       try {
         await apiRequest(`/api/entries/${id}`, { method: 'DELETE' });
         setEntries((current) => current.filter((entry) => entry.id !== id));
-        setNotice({ type: 'success', text: 'Đã xóa thông tin khỏi cổng thông tin dùng chung.' });
+        setNotice({ type: 'success', text: 'Đã chuyển thông tin vào thùng rác. Mục này sẽ bị xóa vĩnh viễn sau 30 ngày.' });
+        await loadEntries();
       } catch (deleteError) {
         setNotice({ type: 'error', text: deleteError.message });
       } finally {
         setDeleting(null);
+      }
+    }
+
+    async function restoreEntry(id) {
+      setRestoring(id);
+      setNotice(null);
+      try {
+        await apiRequest(`/api/entries/${id}/restore`, { method: 'PUT' });
+        setNotice({ type: 'success', text: 'Đã khôi phục thông tin về danh sách.' });
+        await loadEntries();
+      } catch (restoreError) {
+        setNotice({ type: 'error', text: restoreError.message });
+      } finally {
+        setRestoring(null);
       }
     }
 
@@ -283,7 +305,7 @@
           h('div', null,
             h('span', { className: 'section-kicker' }, 'DỮ LIỆU DÙNG CHUNG'),
             h('h1', null, 'Cổng thông tin'),
-            h('p', null, 'Thông tin tại đây được lưu vào kho dữ liệu dùng chung.')
+            h('p', null, 'Thông tin tại đây được lưu vào kho dữ liệu dùng chung. Mục đã xóa sẽ bị xóa vĩnh viễn sau 30 ngày.')
           ),
           h('div', { className: 'portal-count' },
             h('strong', null, String(entries.length)),
@@ -298,45 +320,74 @@
           h('section', { className: 'portal-panel' },
             h('div', { className: 'portal-panel-heading' },
               h('div', null, h('span', { className: 'section-kicker' }, 'KHO THÔNG TIN'), h('h2', null, 'Danh sách')),
-              h('span', { className: 'portal-count-pill' }, `${filteredEntries.length} mục`)
+              h('span', { className: 'portal-count-pill' },
+                `${view === 'trash' ? trashEntries.length : filteredEntries.length} mục`
+              )
             ),
-            h('div', { className: 'portal-filters' },
-              h('input', {
-                type: 'search',
-                value: query,
-                onChange: (event) => setQuery(event.target.value),
-                placeholder: 'Tìm thông tin...',
-                'aria-label': 'Tìm thông tin'
-              }),
-              h('select', {
-                value: category,
-                onChange: (event) => setCategory(event.target.value),
-                'aria-label': 'Lọc theo loại thông tin'
-              },
-              h('option', { value: 'Tất cả' }, 'Tất cả loại'),
-              categories.map((name) => h('option', { value: name, key: name }, name)))
+            h('div', { className: 'portal-views', role: 'tablist', 'aria-label': 'Danh sách thông tin' },
+              h('button', {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': view === 'entries',
+                className: view === 'entries' ? 'active' : '',
+                onClick: () => setView('entries')
+              }, 'Thông tin'),
+              h('button', {
+                type: 'button',
+                role: 'tab',
+                'aria-selected': view === 'trash',
+                className: view === 'trash' ? 'active' : '',
+                onClick: () => setView('trash')
+              }, `Thùng rác${trashEntries.length ? ` (${trashEntries.length})` : ''}`)
+            ),
+            view === 'entries' && h('div', { className: 'portal-filters' },
+                h('input', {
+                  type: 'search',
+                  value: query,
+                  onChange: (event) => setQuery(event.target.value),
+                  placeholder: 'Tìm thông tin...',
+                  'aria-label': 'Tìm thông tin'
+                }),
+                h('select', {
+                  value: category,
+                  onChange: (event) => setCategory(event.target.value),
+                  'aria-label': 'Lọc theo loại thông tin'
+                },
+                h('option', { value: 'Tất cả' }, 'Tất cả loại'),
+                categories.map((name) => h('option', { value: name, key: name }, name)))
             ),
             loading
               ? h('p', { className: 'portal-empty' }, 'Đang tải thông tin...')
-              : filteredEntries.length === 0
+              : (view === 'trash' ? trashEntries.length : filteredEntries.length) === 0
                 ? h('p', { className: 'portal-empty' },
-                    entries.length ? 'Không tìm thấy thông tin phù hợp.' : 'Chưa có thông tin nào được lưu.'
+                    view === 'trash'
+                      ? 'Thùng rác đang trống.'
+                      : entries.length ? 'Không tìm thấy thông tin phù hợp.' : 'Chưa có thông tin nào được lưu.'
                   )
                 : h('div', { className: 'portal-entry-list' },
-                    filteredEntries.map((entry) => h('article', { className: 'portal-entry', key: entry.id },
+                    (view === 'trash' ? trashEntries : filteredEntries)
+                      .map((entry) => h('article', { className: 'portal-entry', key: entry.id },
                       h('div', { className: 'portal-entry-heading' },
                         h('span', { className: 'portal-entry-category' }, entry.loai_thong_tin),
-                        h('time', null, entry.created_at)
+                        h('time', null, view === 'trash' ? `Đã xóa ${entry.deleted_at}` : entry.created_at)
                       ),
                       h('h3', null, entry.mo_ta),
                       entry.noi_dung && h('p', null, entry.noi_dung),
-                      h('button', {
-                        className: 'portal-delete',
-                        type: 'button',
-                        onClick: () => deleteEntry(entry.id),
-                        disabled: deleting === entry.id,
-                        'aria-label': `Xóa ${entry.mo_ta}`
-                      }, deleting === entry.id ? 'Đang xóa...' : 'Xóa')
+                      view === 'trash'
+                        ? h('button', {
+                            className: 'portal-restore',
+                            type: 'button',
+                            onClick: () => restoreEntry(entry.id),
+                            disabled: restoring === entry.id,
+                            'aria-label': `Khôi phục ${entry.mo_ta}`
+                          }, restoring === entry.id ? 'Đang khôi phục...' : 'Khôi phục')
+                        : h('button', {
+                            className: 'portal-delete',
+                            type: 'button',
+                            onClick: () => deleteEntry(entry.id),
+                            disabled: deleting === entry.id,
+                            'aria-label': `Xóa ${entry.mo_ta}`
+                          }, deleting === entry.id ? 'Đang xóa...' : 'Xóa')
                     ))
                   )
           ),
