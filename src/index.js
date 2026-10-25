@@ -5,6 +5,14 @@ const MAX_TASK_TITLE_LENGTH = 100;
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_COOKIE = 'myweb_session';
 const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_HASH_ITERATIONS = 100000;
+const PROFILE_LIMITS = {
+  full_name: 120,
+  hometown: 200,
+  current_location: 200,
+  workplace: 200
+};
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
 const encoder = new TextEncoder();
 
@@ -179,6 +187,132 @@ function passwordsMatch(candidate, expected) {
   return difference === 0;
 }
 
+async function hashPassword(password, salt) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const hash = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PASSWORD_HASH_ITERATIONS },
+    key,
+    256
+  );
+  return new Uint8Array(hash);
+}
+
+const encodeBytes = (bytes) => toBase64Url(bytes);
+
+async function verifyStoredPassword(password, salt, expectedHash) {
+  return passwordsMatch(encodeBytes(await hashPassword(password, fromBase64Url(salt))), expectedHash);
+}
+
+async function readAccountCredentials(db, username) {
+  return db.prepare(
+    'SELECT password_salt, password_hash FROM user_profiles WHERE username = ?'
+  ).bind(username.toLowerCase()).first();
+}
+
+async function handleAccountProfile(request, db, username) {
+  if (request.method === 'GET') {
+    const profile = await db.prepare(
+      'SELECT full_name, birth_year, hometown, current_location, workplace FROM user_profiles WHERE username = ?'
+    ).bind(username.toLowerCase()).first();
+    return json({
+      profile: {
+        full_name: profile?.full_name || '',
+        birth_year: profile?.birth_year || '',
+        hometown: profile?.hometown || '',
+        current_location: profile?.current_location || '',
+        workplace: profile?.workplace || ''
+      }
+    });
+  }
+
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
+  const body = await readJson(request);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json({ error: 'Nội dung gửi lên không phải JSON hợp lệ.' }, 400);
+  }
+
+  const profile = {};
+  for (const [field, limit] of Object.entries(PROFILE_LIMITS)) {
+    if (typeof body[field] !== 'string') {
+      return json({ error: 'Các trường thông tin cá nhân cần có định dạng văn bản.' }, 400);
+    }
+    profile[field] = body[field].trim();
+    if (profile[field].length > limit) {
+      return json({ error: `Trường thông tin vượt quá ${limit} ký tự.` }, 400);
+    }
+  }
+
+  const currentYear = new Date().getFullYear();
+  const birthYear = body.birth_year === '' ? null : Number(body.birth_year);
+  if (
+    birthYear !== null &&
+    (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > currentYear)
+  ) {
+    return json({ error: `Năm sinh phải nằm trong khoảng 1900 đến ${currentYear}.` }, 400);
+  }
+
+  await db.prepare(
+    `INSERT INTO user_profiles (username, full_name, birth_year, hometown, current_location, workplace)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(username) DO UPDATE SET
+       full_name = excluded.full_name,
+       birth_year = excluded.birth_year,
+       hometown = excluded.hometown,
+       current_location = excluded.current_location,
+       workplace = excluded.workplace`
+  ).bind(
+    username.toLowerCase(),
+    profile.full_name,
+    birthYear,
+    profile.hometown,
+    profile.current_location,
+    profile.workplace
+  ).run();
+  return json({ ok: true });
+}
+
+async function handlePasswordChange(request, db, username, env) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  const body = await readJson(request);
+  if (
+    !body ||
+    typeof body.current_password !== 'string' ||
+    typeof body.new_password !== 'string' ||
+    body.current_password.length > 1024 ||
+    body.new_password.length > 1024
+  ) {
+    return json({ error: 'Vui lòng nhập mật khẩu hiện tại và mật khẩu mới hợp lệ.' }, 400);
+  }
+  if (body.new_password.length < PASSWORD_MIN_LENGTH) {
+    return json({ error: `Mật khẩu mới cần có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.` }, 400);
+  }
+
+  const configuredUser = getUsers(env).get(username.toLowerCase());
+  if (!configuredUser) return json({ error: 'Tài khoản không còn hợp lệ.' }, 401);
+  const credentials = await readAccountCredentials(db, username);
+  const currentPasswordMatches = credentials?.password_hash
+    ? await verifyStoredPassword(
+      body.current_password,
+      credentials.password_salt,
+      credentials.password_hash
+    )
+    : passwordsMatch(body.current_password, configuredUser.password);
+  if (!currentPasswordMatches) {
+    return json({ error: 'Mật khẩu hiện tại không chính xác.' }, 400);
+  }
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const passwordHash = encodeBytes(await hashPassword(body.new_password, salt));
+  await db.prepare(
+    `INSERT INTO user_profiles (username, password_salt, password_hash)
+     VALUES (?, ?, ?)
+     ON CONFLICT(username) DO UPDATE SET
+       password_salt = excluded.password_salt,
+       password_hash = excluded.password_hash`
+  ).bind(username.toLowerCase(), encodeBytes(salt), passwordHash).run();
+  return json({ ok: true });
+}
+
 async function readJson(request) {
   try {
     return await request.json();
@@ -224,6 +358,15 @@ async function handleAuth(request, env, pathname) {
     return json({ authenticated: Boolean(session), username: session?.username || null });
   }
 
+  if (pathname === '/api/auth/profile' || pathname === '/api/auth/password') {
+    const session = await readSession(request, env);
+    if (!session) return json({ error: 'Vui lòng đăng nhập để tiếp tục.' }, 401);
+    if (pathname === '/api/auth/profile') {
+      return handleAccountProfile(request, env.DB, session.username);
+    }
+    return handlePasswordChange(request, env.DB, session.username, env);
+  }
+
   if (pathname === '/api/auth/login') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     const body = await readJson(request);
@@ -241,9 +384,13 @@ async function handleAuth(request, env, pathname) {
     const configuredUser = USERNAME_PATTERN.test(body.username)
       ? users.get(body.username.toLowerCase())
       : null;
-    const candidatePassword = body.password;
-    const expectedPassword = configuredUser?.password || env.AUTH_SECRET;
-    if (!configuredUser || !passwordsMatch(candidatePassword, expectedPassword)) {
+    const credentials = configuredUser
+      ? await readAccountCredentials(env.DB, configuredUser.username)
+      : null;
+    const passwordIsValid = configuredUser && (credentials?.password_hash
+      ? await verifyStoredPassword(body.password, credentials.password_salt, credentials.password_hash)
+      : passwordsMatch(body.password, configuredUser.password));
+    if (!passwordIsValid) {
       return json({ error: 'Tên tài khoản hoặc mật khẩu không chính xác.' }, 401);
     }
 

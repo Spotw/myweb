@@ -379,9 +379,216 @@
     );
   }
 
+  function AccountDialog({ onClose }) {
+    const emptyProfile = {
+      full_name: '',
+      birth_year: '',
+      hometown: '',
+      current_location: '',
+      workplace: ''
+    };
+    const [section, setSection] = useState('profile');
+    const [profile, setProfile] = useState(emptyProfile);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [profileLoaded, setProfileLoaded] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
+
+    useEffect(() => {
+      let active = true;
+      apiRequest('/api/auth/profile')
+        .then((result) => {
+          if (active) {
+            setProfile({ ...emptyProfile, ...result.profile });
+            setProfileLoaded(true);
+          }
+        })
+        .catch((profileError) => {
+          if (active) setError(profileError.message);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+
+      function handleKeyDown(event) {
+        if (event.key === 'Escape') onClose();
+      }
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        active = false;
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }, []);
+
+    async function saveProfile(event) {
+      event.preventDefault();
+      setSaving(true);
+      setError('');
+      setNotice('');
+      try {
+        await apiRequest('/api/auth/profile', {
+          method: 'PUT',
+          body: JSON.stringify(profile)
+        });
+        setNotice('Đã lưu thông tin cá nhân.');
+      } catch (saveError) {
+        setError(saveError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function changePassword(event) {
+      event.preventDefault();
+      setError('');
+      setNotice('');
+      if (newPassword !== confirmPassword) {
+        setError('Mật khẩu xác nhận không khớp.');
+        return;
+      }
+      setSaving(true);
+      try {
+        await apiRequest('/api/auth/password', {
+          method: 'POST',
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword
+          })
+        });
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setNotice('Đã thay đổi mật khẩu.');
+      } catch (passwordError) {
+        setError(passwordError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    function profileField(id, label, key, maxLength, placeholder = '') {
+      return h(React.Fragment, { key: id },
+        h('label', { htmlFor: id }, label),
+        h('input', {
+          id,
+          value: profile[key],
+          maxLength,
+          placeholder,
+          onChange: (event) => setProfile((current) => ({ ...current, [key]: event.target.value }))
+        })
+      );
+    }
+
+    return h('div', {
+      className: 'dialog-backdrop',
+      onMouseDown: (event) => {
+        if (event.target === event.currentTarget) onClose();
+      }
+    },
+    h('section', {
+      className: 'task-dialog account-dialog',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'account-dialog-title'
+    },
+    h('button', {
+      type: 'button',
+      className: 'dialog-close',
+      onClick: onClose,
+      'aria-label': 'Đóng'
+    }, '×'),
+    h('span', { className: 'section-kicker' }, 'TÀI KHOẢN'),
+    h('h2', { id: 'account-dialog-title' }, 'Thông tin của bạn'),
+    h('div', { className: 'account-dialog-tabs', role: 'tablist', 'aria-label': 'Cài đặt tài khoản' },
+      h('button', {
+        type: 'button',
+        role: 'tab',
+        'aria-selected': section === 'profile',
+        className: section === 'profile' ? 'active' : '',
+        onClick: () => { setSection('profile'); setError(''); setNotice(''); }
+      }, 'Thông tin cá nhân'),
+      h('button', {
+        type: 'button',
+        role: 'tab',
+        'aria-selected': section === 'password',
+        className: section === 'password' ? 'active' : '',
+        onClick: () => { setSection('password'); setError(''); setNotice(''); }
+      }, 'Đổi mật khẩu')
+    ),
+    error && h('p', { className: 'account-message error', role: 'alert' }, error),
+    notice && h('p', { className: 'account-message success', role: 'status' }, notice),
+    loading
+      ? h('p', { className: 'login-loading' }, 'Đang tải thông tin tài khoản...')
+      : !profileLoaded
+        ? h('p', { className: 'account-form-hint' }, 'Không thể tải hồ sơ. Hãy đóng cửa sổ và thử lại.')
+        : section === 'profile'
+        ? h('form', { className: 'account-form', onSubmit: saveProfile },
+            profileField('profile-full-name', 'Họ và tên', 'full_name', 120, 'Nguyễn Văn An'),
+            h('label', { htmlFor: 'profile-birth-year' }, 'Năm sinh'),
+            h('input', {
+              id: 'profile-birth-year',
+              type: 'number',
+              min: 1900,
+              max: new Date().getFullYear(),
+              value: profile.birth_year,
+              onChange: (event) => setProfile((current) => ({ ...current, birth_year: event.target.value }))
+            }),
+            profileField('profile-hometown', 'Quê quán', 'hometown', 200),
+            profileField('profile-current-location', 'Nơi ở hiện tại', 'current_location', 200),
+            profileField('profile-workplace', 'Nơi làm việc', 'workplace', 200),
+            h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
+              saving ? 'Đang lưu...' : 'Lưu thông tin'
+            )
+          )
+        : h('form', { className: 'account-form', onSubmit: changePassword },
+            h('label', { htmlFor: 'current-password' }, 'Mật khẩu hiện tại'),
+            h('input', {
+              id: 'current-password',
+              type: 'password',
+              autoComplete: 'current-password',
+              maxLength: 1024,
+              value: currentPassword,
+              onChange: (event) => setCurrentPassword(event.target.value),
+              required: true
+            }),
+            h('label', { htmlFor: 'new-password' }, 'Mật khẩu mới'),
+            h('input', {
+              id: 'new-password',
+              type: 'password',
+              autoComplete: 'new-password',
+              minLength: 8,
+              maxLength: 1024,
+              value: newPassword,
+              onChange: (event) => setNewPassword(event.target.value),
+              required: true
+            }),
+            h('label', { htmlFor: 'confirm-password' }, 'Xác nhận mật khẩu mới'),
+            h('input', {
+              id: 'confirm-password',
+              type: 'password',
+              autoComplete: 'new-password',
+              minLength: 8,
+              maxLength: 1024,
+              value: confirmPassword,
+              onChange: (event) => setConfirmPassword(event.target.value),
+              required: true
+            }),
+            h('p', { className: 'account-form-hint' }, 'Mật khẩu mới cần có ít nhất 8 ký tự.'),
+            h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
+              saving ? 'Đang cập nhật...' : 'Đổi mật khẩu'
+            )
+          )
+    ));
+  }
+
   function Workspace({ username, onLogout }) {
     const [activeView, setActiveView] = useState('calendar');
     const [logoutError, setLogoutError] = useState('');
+    const [accountOpen, setAccountOpen] = useState(false);
 
     async function logout() {
       setLogoutError('');
@@ -412,11 +619,17 @@
           }, 'Cổng thông tin')
         ),
         h('div', { className: 'workspace-account' },
-          h('span', { className: 'workspace-username' }, username),
+          h('button', {
+            className: 'workspace-username',
+            type: 'button',
+            onClick: () => setAccountOpen(true),
+            'aria-label': `Mở cài đặt tài khoản ${username}`
+          }, h('span', { 'aria-hidden': 'true' }, '◉'), username),
           h('button', { className: 'workspace-logout', type: 'button', onClick: logout }, 'Đăng xuất')
         )
       ),
       logoutError && h('p', { className: 'workspace-error', role: 'alert' }, logoutError),
+      accountOpen && h(AccountDialog, { onClose: () => setAccountOpen(false) }),
       activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal)
     );
   }

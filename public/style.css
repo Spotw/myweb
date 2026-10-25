@@ -1154,12 +1154,32 @@ button {
 }
 
 .workspace-username {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   max-width: 160px;
   overflow: hidden;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
   color: var(--ink);
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
   text-overflow: ellipsis;
+}
+
+.workspace-username:hover {
+  border-color: var(--line);
+  background: #f7faf5;
+  color: var(--green-dark);
+}
+
+.workspace-username:focus-visible,
+.account-dialog-tabs button:focus-visible {
+  outline: 3px solid rgba(87, 122, 96, 0.3);
+  outline-offset: 2px;
 }
 
 .workspace-logout {
@@ -1178,6 +1198,100 @@ button {
   margin: 12px auto -25px;
   color: var(--danger);
   font-size: 12px;
+}
+
+.account-dialog {
+  width: min(100%, 480px);
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+}
+
+.account-dialog h2 {
+  margin: 5px 0 0;
+  font-family: "Manrope", sans-serif;
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+
+.account-dialog-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 20px 0 15px;
+  padding: 4px;
+  border-radius: 11px;
+  background: #f4f6f2;
+}
+
+.account-dialog-tabs button {
+  min-height: 35px;
+  flex: 1;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.account-dialog-tabs button.active {
+  background: #fff;
+  color: var(--green-dark);
+  box-shadow: 0 1px 4px rgba(32, 44, 36, 0.08);
+}
+
+.account-form {
+  display: grid;
+  gap: 9px;
+}
+
+.account-form label {
+  margin-top: 5px;
+  color: #4e5b50;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.account-form input:focus {
+  border-color: #9eb69b;
+  box-shadow: 0 0 0 3px rgba(103, 139, 105, 0.1);
+}
+
+.account-form .btn-save {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.account-form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.account-message {
+  margin: 0 0 12px;
+  font-size: 11px;
+}
+
+.account-message.error {
+  color: var(--danger);
+}
+
+.account-message.success {
+  color: var(--green-dark);
 }
 
 .login-shell {
@@ -1500,6 +1614,10 @@ button {
     padding: 10px 13px;
   }
 
+  .workspace-brand {
+    flex: 1;
+  }
+
   .workspace-tabs {
     order: 3;
     width: 100%;
@@ -1516,12 +1634,17 @@ button {
   }
 
   .workspace-username {
-    max-width: 82px;
+    max-width: 120px;
+    padding-inline: 6px;
   }
 
   .workspace-logout {
     padding-inline: 8px;
     font-size: 10px;
+  }
+
+  .account-dialog {
+    padding: 25px 19px;
   }
 
   .portal-shell {

@@ -34,7 +34,7 @@ AUTH_SECRET=chuoi_ngau_nhien_bi_mat_toi_thieu_32_ky_tu
 
 ## Cơ sở dữ liệu và triển khai
 
-Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo `entries` nếu bảng chưa tồn tại:
+Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo các bảng cần thiết (bao gồm lưu hồ sơ tài khoản và thông tin xác thực khi đổi mật khẩu):
 
 ```powershell
 npm run db:migrate:remote
@@ -42,5 +42,7 @@ npm run deploy
 ```
 
 Lịch của từng tài khoản được lưu trong bảng riêng có dạng `schedule_<sha256_tên_tài_khoản_viết_thường>`; bảng tự tạo khi tài khoản mở lịch lần đầu. Tên bảng được băm để tên đăng nhập (kể cả email) không thể tác động đến SQL. Cổng thông tin đọc và ghi vào bảng `entries` dùng chung. Các bản ghi lịch cũ trong `web_data` vẫn được giữ nguyên nhưng không thể tự gán cho một tài khoản; lịch từng tài khoản bắt đầu riêng sau khi bật đăng nhập.
+
+Thông tin cá nhân và mật khẩu đã đổi được lưu trong bảng `user_profiles`; mật khẩu lưu dưới dạng PBKDF2 hash có salt, không lưu văn bản thuần. Sau khi đổi mật khẩu, lần đăng nhập tiếp theo dùng mật khẩu mới thay cho mật khẩu khai báo trong `APP_USERS`.
 
 Địa chỉ `icollector.duyvu2003dk.workers.dev` được cấu hình chuyển tiếp tạm thời sang `myweb.duyvu2003dk.workers.dev`. Cần triển khai thay đổi Worker chuyển tiếp trong dự án iCollector để địa chỉ cũ mở trang hợp nhất.
