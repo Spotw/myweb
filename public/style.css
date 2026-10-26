@@ -1554,16 +1554,31 @@ button {
   background: #fff;
 }
 
+.portal-entry-trash {
+  padding-right: 14px;
+}
+
 .portal-entry-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
+.portal-entry-meta {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .portal-entry-heading time {
   color: var(--muted);
   font-size: 9px;
+  overflow-wrap: anywhere;
 }
 
 .portal-entry h3 {
@@ -1599,6 +1614,10 @@ button {
 }
 
 .portal-restore {
+  position: static;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  background: var(--green-soft);
   color: var(--green-dark);
 }
 
@@ -1714,6 +1733,11 @@ button {
     align-items: start;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .portal-entry-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .login-card {

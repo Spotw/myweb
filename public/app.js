@@ -366,22 +366,28 @@
                   )
                 : h('div', { className: 'portal-entry-list' },
                     (view === 'trash' ? trashEntries : filteredEntries)
-                      .map((entry) => h('article', { className: 'portal-entry', key: entry.id },
+                      .map((entry) => h('article', {
+                        className: `portal-entry${view === 'trash' ? ' portal-entry-trash' : ''}`,
+                        key: entry.id
+                      },
                       h('div', { className: 'portal-entry-heading' },
                         h('span', { className: 'portal-entry-category' }, entry.loai_thong_tin),
-                        h('time', null, view === 'trash' ? `Đã xóa ${entry.deleted_at}` : entry.created_at)
+                        view === 'trash'
+                          ? h('div', { className: 'portal-entry-meta' },
+                              h('time', null, `Đã xóa ${entry.deleted_at}`),
+                              h('button', {
+                                className: 'portal-restore',
+                                type: 'button',
+                                onClick: () => restoreEntry(entry.id),
+                                disabled: restoring === entry.id,
+                                'aria-label': `Khôi phục ${entry.mo_ta}`
+                              }, restoring === entry.id ? 'Đang khôi phục...' : 'Khôi phục')
+                            )
+                          : h('time', null, entry.created_at)
                       ),
                       h('h3', null, entry.mo_ta),
                       entry.noi_dung && h('p', null, entry.noi_dung),
-                      view === 'trash'
-                        ? h('button', {
-                            className: 'portal-restore',
-                            type: 'button',
-                            onClick: () => restoreEntry(entry.id),
-                            disabled: restoring === entry.id,
-                            'aria-label': `Khôi phục ${entry.mo_ta}`
-                          }, restoring === entry.id ? 'Đang khôi phục...' : 'Khôi phục')
-                        : h('button', {
+                      view !== 'trash' && h('button', {
                             className: 'portal-delete',
                             type: 'button',
                             onClick: () => deleteEntry(entry.id),
