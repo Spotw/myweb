@@ -1076,7 +1076,7 @@
       h('p', { className: 'dialog-description' }, 'Việc gì bạn muốn nhớ làm vào ngày này?'),
       dayErrors[activeDate] && h('p', { className: 'dialog-error', role: 'alert' }, dayErrors[activeDate]),
       selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
-        h('h3', null, 'Việc trong ngày này'),
+        h('h3', null, `Việc trong ngày này (${selectedTasks.length})`),
         selectedTasks.map((task) => h('div', {
           className: `dialog-task${task.done ? ' is-done' : ''}`,
           key: task.id
