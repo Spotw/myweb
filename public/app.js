@@ -1024,7 +1024,11 @@
                 }, '×'))),
                 extraTasks > 0 && h('span', { className: 'more-tasks' }, `+${extraTasks} việc nữa`),
                 dayErrors[date] && h('span', { className: 'cell-error', role: 'status' }, dayErrors[date])
-              )
+              ),
+              tasks.length > 0 && h('span', {
+                className: 'mobile-task-count',
+                'aria-hidden': 'true'
+              }, `${tasks.length} việc`)
               );
             })
           ),
@@ -1038,7 +1042,7 @@
               h('span', { className: 'legend-dot legend-task', 'aria-hidden': 'true' }),
               'Công việc'
             ),
-            h('span', { className: 'legend-hint' }, 'Nhấn + để thêm việc vào ngày bất kỳ')
+            h('span', { className: 'legend-hint' }, 'Chọn một ngày để xem hoặc thêm việc')
           )
         ),
         h('footer', { className: 'footer-note' },

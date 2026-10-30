@@ -471,6 +471,10 @@ button {
   margin-top: 6px;
 }
 
+.mobile-task-count {
+  display: none;
+}
+
 .task-chip,
 .dialog-task {
   display: flex;
@@ -931,7 +935,8 @@ button {
 
   .calendar-toolbar {
     align-items: center;
-    gap: 5px;
+    flex-wrap: wrap;
+    gap: 8px;
     margin: 0 3px 12px;
   }
 
@@ -953,14 +958,14 @@ button {
   }
 
   .btn-today {
-    min-height: 30px;
-    padding: 5px 7px;
-    font-size: 9px;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 11px;
   }
 
   .icon-button {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
   }
 
   .calendar-grid {
@@ -981,13 +986,13 @@ button {
   }
 
   .calendar-cell {
-    min-height: 82px;
-    padding: 3px 2px;
+    min-height: 72px;
+    padding: 4px 3px;
   }
 
   .cell-top {
-    min-height: 20px;
-    justify-content: center;
+    min-height: 24px;
+    justify-content: flex-start;
   }
 
   .cell-date-labels {
@@ -995,57 +1000,76 @@ button {
   }
 
   .date-number {
-    width: 18px;
-    height: 18px;
-    font-size: 9px;
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
   }
 
   .lunar-date {
-    font-size: 7px;
+    display: none;
   }
 
   .add-task-button {
-    position: absolute;
-    z-index: 1;
-    top: 2px;
-    right: 1px;
-    width: 15px;
-    height: 15px;
-    border-radius: 4px;
-    font-size: 13px;
-    opacity: 1;
+    display: none;
   }
 
   .cell-tasks {
-    gap: 3px;
-    margin-top: 3px;
-  }
-
-  .task-chip {
-    min-height: 16px;
-    gap: 2px;
-    padding: 1px 2px;
-    border-radius: 4px;
-  }
-
-  .task-toggle {
-    gap: 2px;
-  }
-
-  .task-check {
-    width: 8px;
-    height: 8px;
-    border-radius: 3px;
-    font-size: 6px;
-  }
-
-  .task-title {
-    font-size: 8px;
-    line-height: 1.2;
-  }
-
-  .task-delete {
     display: none;
+  }
+
+  .mobile-task-count {
+    display: inline-flex;
+    max-width: 100%;
+    align-self: center;
+    overflow: hidden;
+    margin-top: auto;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--green-soft);
+    color: var(--green-dark);
+    font-size: 8px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dialog-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .task-dialog {
+    width: 100%;
+    max-height: min(90vh, 760px);
+    overflow-y: auto;
+    padding: 28px 20px calc(22px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+  }
+
+  .dialog-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .dialog-task {
+    min-height: 44px;
+    align-items: center;
+    padding: 8px;
+  }
+
+  .dialog-task .task-check {
+    width: 20px;
+    height: 20px;
+    margin-top: 0;
+  }
+
+  .dialog-task .task-title {
+    font-size: 14px;
+  }
+
+  .dialog-task-delete {
+    min-height: 44px;
+    padding-inline: 12px;
   }
 
   .more-tasks {
@@ -1054,12 +1078,12 @@ button {
   }
 
   .cell-error {
-    font-size: 7px;
+    font-size: 8px;
   }
 
   .legend-item,
   .legend-hint {
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .calendar-legend {
@@ -1078,8 +1102,36 @@ button {
     text-align: center;
   }
 
-  .task-dialog {
-    padding: 25px 19px;
+  .task-input {
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  .btn-save {
+    min-height: 44px;
+    padding-inline: 18px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 380px) {
+  .calendar-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-controls {
+    justify-content: space-between;
+  }
+
+  .calendar-cell {
+    min-height: 66px;
+    padding-inline: 1px;
+  }
+
+  .mobile-task-count {
+    padding-inline: 3px;
+    font-size: 7px;
   }
 }
 
