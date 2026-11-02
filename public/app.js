@@ -8,6 +8,7 @@
   ];
   const MAX_TASKS_PER_DAY = 20;
   const MAX_TASK_TITLE_LENGTH = 100;
+  const MIN_PASSWORD_LENGTH = 8;
   const LUNAR_TIME_ZONE = 7;
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
   const pad = (value) => String(value).padStart(2, '0');
@@ -499,7 +500,7 @@
     );
   }
 
-  function AccountDialog({ onClose }) {
+  function AccountDialog({ username, onClose }) {
     const emptyProfile = {
       full_name: '',
       birth_year: '',
@@ -512,6 +513,9 @@
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [accountUsername, setAccountUsername] = useState('');
+    const [accountPassword, setAccountPassword] = useState('');
+    const [confirmAccountPassword, setConfirmAccountPassword] = useState('');
     const [loading, setLoading] = useState(true);
     const [profileLoaded, setProfileLoaded] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -590,6 +594,32 @@
       }
     }
 
+    async function createAccount(event) {
+      event.preventDefault();
+      setError('');
+      setNotice('');
+      if (accountPassword !== confirmAccountPassword) {
+        setError('Mật khẩu xác nhận không khớp.');
+        return;
+      }
+
+      setSaving(true);
+      try {
+        const result = await apiRequest('/api/auth/accounts', {
+          method: 'POST',
+          body: JSON.stringify({ username: accountUsername, password: accountPassword })
+        });
+        setAccountUsername('');
+        setAccountPassword('');
+        setConfirmAccountPassword('');
+        setNotice(`Đã tạo tài khoản ${result.username}.`);
+      } catch (createError) {
+        setError(createError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
     function profileField(id, label, key, maxLength, placeholder = '') {
       return h(React.Fragment, { key: id },
         h('label', { htmlFor: id }, label),
@@ -637,13 +667,60 @@
         'aria-selected': section === 'password',
         className: section === 'password' ? 'active' : '',
         onClick: () => { setSection('password'); setError(''); setNotice(''); }
-      }, 'Đổi mật khẩu')
+      }, 'Đổi mật khẩu'),
+      username.toLowerCase() === 'duyvu@pvdv' && h('button', {
+        type: 'button',
+        role: 'tab',
+        'aria-selected': section === 'accounts',
+        className: section === 'accounts' ? 'active' : '',
+        onClick: () => { setSection('accounts'); setError(''); setNotice(''); }
+      }, 'Tạo tài khoản')
     ),
     error && h('p', { className: 'account-message error', role: 'alert' }, error),
     notice && h('p', { className: 'account-message success', role: 'status' }, notice),
-    loading
+    loading && section !== 'accounts'
       ? h('p', { className: 'login-loading' }, 'Đang tải thông tin tài khoản...')
-      : !profileLoaded
+      : section === 'accounts'
+        ? h('form', { className: 'account-form', onSubmit: createAccount },
+            h('label', { htmlFor: 'new-account-username' }, 'Tên đăng nhập mới'),
+            h('input', {
+              id: 'new-account-username',
+              autoComplete: 'username',
+              maxLength: 254,
+              value: accountUsername,
+              onChange: (event) => setAccountUsername(event.target.value),
+              required: true
+            }),
+            h('label', { htmlFor: 'new-account-password' }, 'Mật khẩu'),
+            h('input', {
+              id: 'new-account-password',
+              type: 'password',
+              autoComplete: 'new-password',
+              minLength: MIN_PASSWORD_LENGTH,
+              maxLength: 1024,
+              value: accountPassword,
+              onChange: (event) => setAccountPassword(event.target.value),
+              required: true
+            }),
+            h('label', { htmlFor: 'confirm-account-password' }, 'Xác nhận mật khẩu'),
+            h('input', {
+              id: 'confirm-account-password',
+              type: 'password',
+              autoComplete: 'new-password',
+              minLength: MIN_PASSWORD_LENGTH,
+              maxLength: 1024,
+              value: confirmAccountPassword,
+              onChange: (event) => setConfirmAccountPassword(event.target.value),
+              required: true
+            }),
+            h('p', { className: 'account-form-hint' },
+              `Mật khẩu cần có ít nhất ${MIN_PASSWORD_LENGTH} ký tự. Tên đăng nhập không phân biệt chữ hoa/thường.`
+            ),
+            h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
+              saving ? 'Đang tạo...' : 'Tạo tài khoản'
+            )
+          )
+        : !profileLoaded
         ? h('p', { className: 'account-form-hint' }, 'Không thể tải hồ sơ. Hãy đóng cửa sổ và thử lại.')
         : section === 'profile'
         ? h('form', { className: 'account-form', onSubmit: saveProfile },
@@ -749,7 +826,7 @@
         )
       ),
       logoutError && h('p', { className: 'workspace-error', role: 'alert' }, logoutError),
-      accountOpen && h(AccountDialog, { onClose: () => setAccountOpen(false) }),
+      accountOpen && h(AccountDialog, { username, onClose: () => setAccountOpen(false) }),
       activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal)
     );
   }

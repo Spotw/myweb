@@ -7,6 +7,7 @@ const SESSION_COOKIE = 'myweb_session';
 const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 100000;
+const ACCOUNT_CREATOR_USERNAME = 'duyvu@pvdv';
 const PROFILE_LIMITS = {
   full_name: 120,
   hometown: 200,
@@ -69,10 +70,12 @@ function getUsers(env) {
   }
 
   const normalizedUsers = new Map();
-  const userConfigs = [
-    ['APP_USERS', env.APP_USERS],
-    ['APP_USERS_EXTRA', env.APP_USERS_EXTRA]
-  ].filter(([, config]) => config);
+  const userConfigs = Object.entries(env).filter(([configName, config]) =>
+    (configName === 'APP_USERS' ||
+      configName === 'APP_USERS_EXTRA' ||
+      configName.startsWith('APP_USERS_EXTRA_')) &&
+    config
+  );
 
   for (const [configName, userConfig] of userConfigs) {
     let users;
@@ -165,15 +168,17 @@ async function readSession(request, env) {
   if (!valid) return null;
 
   const configuredUser = users.get(String(session.username).toLowerCase());
+  const managedAccount = configuredUser ? null : await readManagedAccount(env.DB, session.username);
   if (
-    !configuredUser ||
-    configuredUser.username !== session.username ||
+    (!configuredUser && !managedAccount) ||
+    (configuredUser && configuredUser.username !== session.username) ||
+    (managedAccount && managedAccount.username !== session.username) ||
     !Number.isSafeInteger(session.expiresAt) ||
     session.expiresAt <= Math.floor(Date.now() / 1000)
   ) {
     return null;
   }
-  return { username: configuredUser.username };
+  return { username: configuredUser?.username || managedAccount.username };
 }
 
 function passwordsMatch(candidate, expected) {
@@ -206,6 +211,12 @@ async function verifyStoredPassword(password, salt, expectedHash) {
 async function readAccountCredentials(db, username) {
   return db.prepare(
     'SELECT password_salt, password_hash FROM user_profiles WHERE username = ?'
+  ).bind(username.toLowerCase()).first();
+}
+
+async function readManagedAccount(db, username) {
+  return db.prepare(
+    'SELECT username, password_salt, password_hash FROM user_accounts WHERE username = ?'
   ).bind(username.toLowerCase()).first();
 }
 
@@ -288,8 +299,9 @@ async function handlePasswordChange(request, db, username, env) {
   }
 
   const configuredUser = getUsers(env).get(username.toLowerCase());
-  if (!configuredUser) return json({ error: 'Tài khoản không còn hợp lệ.' }, 401);
-  const credentials = await readAccountCredentials(db, username);
+  const managedAccount = configuredUser ? null : await readManagedAccount(db, username);
+  if (!configuredUser && !managedAccount) return json({ error: 'Tài khoản không còn hợp lệ.' }, 401);
+  const credentials = managedAccount || await readAccountCredentials(db, username);
   const currentPasswordMatches = credentials?.password_hash
     ? await verifyStoredPassword(
       body.current_password,
@@ -303,14 +315,64 @@ async function handlePasswordChange(request, db, username, env) {
 
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const passwordHash = encodeBytes(await hashPassword(body.new_password, salt));
-  await db.prepare(
-    `INSERT INTO user_profiles (username, password_salt, password_hash)
-     VALUES (?, ?, ?)
-     ON CONFLICT(username) DO UPDATE SET
-       password_salt = excluded.password_salt,
-       password_hash = excluded.password_hash`
-  ).bind(username.toLowerCase(), encodeBytes(salt), passwordHash).run();
+  if (managedAccount) {
+    await db.prepare(
+      'UPDATE user_accounts SET password_salt = ?, password_hash = ? WHERE username = ?'
+    ).bind(encodeBytes(salt), passwordHash, username.toLowerCase()).run();
+  } else {
+    await db.prepare(
+      `INSERT INTO user_profiles (username, password_salt, password_hash)
+       VALUES (?, ?, ?)
+       ON CONFLICT(username) DO UPDATE SET
+         password_salt = excluded.password_salt,
+         password_hash = excluded.password_hash`
+    ).bind(username.toLowerCase(), encodeBytes(salt), passwordHash).run();
+  }
   return json({ ok: true });
+}
+
+async function createManagedAccount(request, db, username, env) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (username.toLowerCase() !== ACCOUNT_CREATOR_USERNAME) {
+    return json({ error: 'Bạn không có quyền tạo tài khoản.' }, 403);
+  }
+
+  const body = await readJson(request);
+  if (
+    !body ||
+    typeof body.username !== 'string' ||
+    typeof body.password !== 'string' ||
+    body.username.length > 254 ||
+    body.password.length > 1024
+  ) {
+    return json({ error: 'Tên tài khoản hoặc mật khẩu không hợp lệ.' }, 400);
+  }
+
+  const newUsername = body.username.trim();
+  if (!USERNAME_PATTERN.test(newUsername)) {
+    return json({
+      error: 'Tên tài khoản phải bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, @, + hoặc -.'
+    }, 400);
+  }
+  if (body.password.length < PASSWORD_MIN_LENGTH) {
+    return json({ error: `Mật khẩu cần có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.` }, 400);
+  }
+
+  const normalizedUsername = newUsername.toLowerCase();
+  if (getUsers(env).has(normalizedUsername)) {
+    return json({ error: 'Tên tài khoản này đã tồn tại.' }, 409);
+  }
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const passwordHash = encodeBytes(await hashPassword(body.password, salt));
+  const result = await db.prepare(
+    `INSERT INTO user_accounts (username, password_salt, password_hash, created_by)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(username) DO NOTHING`
+  ).bind(normalizedUsername, encodeBytes(salt), passwordHash, username.toLowerCase()).run();
+
+  if (!result.meta?.changes) return json({ error: 'Tên tài khoản này đã tồn tại.' }, 409);
+  return json({ ok: true, username: normalizedUsername }, 201);
 }
 
 async function readJson(request) {
@@ -358,6 +420,12 @@ async function handleAuth(request, env, pathname) {
     return json({ authenticated: Boolean(session), username: session?.username || null });
   }
 
+  if (pathname === '/api/auth/accounts') {
+    const session = await readSession(request, env);
+    if (!session) return json({ error: 'Vui lòng đăng nhập để tiếp tục.' }, 401);
+    return createManagedAccount(request, env.DB, session.username, env);
+  }
+
   if (pathname === '/api/auth/profile' || pathname === '/api/auth/password') {
     const session = await readSession(request, env);
     if (!session) return json({ error: 'Vui lòng đăng nhập để tiếp tục.' }, 401);
@@ -384,21 +452,29 @@ async function handleAuth(request, env, pathname) {
     const configuredUser = USERNAME_PATTERN.test(body.username)
       ? users.get(body.username.toLowerCase())
       : null;
+    const managedAccount = configuredUser ? null : await readManagedAccount(env.DB, body.username);
     const credentials = configuredUser
       ? await readAccountCredentials(env.DB, configuredUser.username)
-      : null;
-    const passwordIsValid = configuredUser && (credentials?.password_hash
-      ? await verifyStoredPassword(body.password, credentials.password_salt, credentials.password_hash)
-      : passwordsMatch(body.password, configuredUser.password));
+      : managedAccount;
+    const passwordIsValid = configuredUser
+      ? (credentials?.password_hash
+        ? await verifyStoredPassword(body.password, credentials.password_salt, credentials.password_hash)
+        : passwordsMatch(body.password, configuredUser.password))
+      : managedAccount && await verifyStoredPassword(
+        body.password,
+        managedAccount.password_salt,
+        managedAccount.password_hash
+      );
     if (!passwordIsValid) {
       return json({ error: 'Tên tài khoản hoặc mật khẩu không chính xác.' }, 401);
     }
 
     const expiresAt = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
-    const token = await signSession(configuredUser.username, expiresAt, env.AUTH_SECRET);
+    const authenticatedUsername = configuredUser?.username || managedAccount.username;
+    const token = await signSession(authenticatedUsername, expiresAt, env.AUTH_SECRET);
     const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
     return json(
-      { authenticated: true, username: configuredUser.username },
+      { authenticated: true, username: authenticatedUsername },
       200,
       {
         'Set-Cookie': `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${secure}`

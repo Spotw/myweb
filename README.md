@@ -4,9 +4,9 @@
 
 ## Cấu hình tài khoản
 
-Tài khoản được quản lý thủ công bằng Worker secrets; không ghi thông tin đăng nhập vào mã nguồn.
+Tài khoản ban đầu được cấu hình bằng Worker secrets; các tài khoản tạo từ giao diện được lưu trong D1 dưới dạng mật khẩu PBKDF2 hash có salt.
 
-1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Có thể bổ sung tài khoản trong `APP_USERS_EXTRA` để không phải thay thế danh sách tài khoản hiện tại. Tên đăng nhập có thể dài tối đa 254 ký tự, bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, `@`, `+` hoặc `-`; không phân biệt chữ hoa/thường.
+1. Tạo `APP_USERS` dưới dạng JSON ánh xạ tên tài khoản tới mật khẩu. Có thể bổ sung tài khoản trong `APP_USERS_EXTRA` hoặc các secret có tên bắt đầu bằng `APP_USERS_EXTRA_` để không phải thay thế danh sách tài khoản hiện tại. Mỗi secret là một JSON object ánh xạ tên tài khoản tới mật khẩu. Tên đăng nhập có thể dài tối đa 254 ký tự, bắt đầu bằng chữ hoặc số và chỉ gồm chữ ASCII, số, dấu chấm, gạch dưới, `@`, `+` hoặc `-`; không phân biệt chữ hoa/thường.
    Ví dụ định dạng (hãy thay bằng thông tin thật của bạn):
 
    ```json
@@ -31,6 +31,8 @@ AUTH_SECRET=chuoi_ngau_nhien_bi_mat_toi_thieu_32_ky_tu
 ```
 
 Đăng nhập tạo cookie `HttpOnly`, `SameSite=Strict`, hết hạn sau 7 ngày. Các API lịch và cổng thông tin đều yêu cầu phiên đăng nhập.
+
+Tài khoản `duyvu@pvdv` được phép tạo tài khoản đăng nhập trong cửa sổ cài đặt tài khoản. Quyền này được kiểm tra ở Worker, không chỉ ẩn/hiện nút trên giao diện. Người tạo nhập tên đăng nhập và mật khẩu (tối thiểu 8 ký tự); tên đăng nhập không phân biệt chữ hoa/thường. Áp dụng migration `0005_create_user_accounts.sql` cho D1 trước khi sử dụng tính năng này.
 
 ## Cơ sở dữ liệu và triển khai
 
