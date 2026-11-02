@@ -6,6 +6,13 @@
     'Tháng Một', 'Tháng Hai', 'Tháng Ba', 'Tháng Tư', 'Tháng Năm', 'Tháng Sáu',
     'Tháng Bảy', 'Tháng Tám', 'Tháng Chín', 'Tháng Mười', 'Tháng Mười Một', 'Tháng Mười Hai'
   ];
+  const REPEAT_LABELS = {
+    none: 'Không lặp lại',
+    daily: 'Hàng ngày',
+    weekly: 'Hàng tuần',
+    monthly: 'Hàng tháng',
+    yearly: 'Hàng năm'
+  };
   const MAX_TASKS_PER_DAY = 20;
   const MAX_TASK_TITLE_LENGTH = 100;
   const MIN_PASSWORD_LENGTH = 8;
@@ -977,6 +984,12 @@
     const [dayErrors, setDayErrors] = useState({});
     const [activeDate, setActiveDate] = useState('');
     const [newTitle, setNewTitle] = useState('');
+    const [startTime, setStartTime] = useState('');
+    const [durationHours, setDurationHours] = useState('');
+    const [durationMinutes, setDurationMinutes] = useState('');
+    const [repeat, setRepeat] = useState('none');
+    const [editingTaskId, setEditingTaskId] = useState('');
+    const [editScope, setEditScope] = useState('occurrence');
     const titleInput = useRef(null);
 
     const year = viewMonth.getFullYear();
@@ -990,12 +1003,24 @@
     const completeCount = monthTasks.filter((task) => task.done).length;
     const pendingCount = monthTasks.length - completeCount;
     const selectedTasks = tasksByDate[activeDate] || [];
+    const editingTask = selectedTasks.find((task) => task.id === editingTaskId);
+    const editingRecurringTask = Boolean(editingTask?.seriesId);
 
     useEffect(() => {
       if (!window.gsap || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
 
       const stickers = Array.from(document.querySelectorAll('.pet-svg[data-animal]'));
       const context = window.gsap.context(() => {
+        const fishSchool = document.querySelector('.fish-school');
+        if (fishSchool) {
+          const travel = window.matchMedia('(max-width: 600px)').matches ? 14 : 22;
+          window.gsap.fromTo(
+            fishSchool,
+            { x: -travel },
+            { x: travel, duration: 3.4, repeat: -1, yoyo: true, ease: 'sine.inOut' }
+          );
+        }
+
         stickers.forEach((sticker) => {
           const animal = sticker.dataset.animal;
           if (animal === 'fish') {
@@ -1158,17 +1183,28 @@
       setDayErrors((current) => ({ ...current, [date]: '' }));
     }
 
-    async function saveTasks(date, tasks) {
+    async function saveTasks(date, tasks, seriesUpdate = null) {
       setSavingDates((current) => ({ ...current, [date]: true }));
       setDayErrors((current) => ({ ...current, [date]: '' }));
       try {
         const response = await fetch(`/api/tasks/${date}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tasks })
+          body: JSON.stringify({ tasks, ...(seriesUpdate ? { seriesUpdate } : {}) })
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        setDateTasks(date, tasks);
+        const hasNewRecurrence = tasks.some((task) =>
+          !task.seriesId && task.repeat && task.repeat !== 'none'
+        );
+        const displayedTasks = tasks.map((task) =>
+          !task.seriesId && task.repeat && task.repeat !== 'none'
+            ? { ...task, seriesId: task.id, occurrenceDate: date }
+            : task
+        );
+        setDateTasks(date, displayedTasks);
+        if (seriesUpdate || hasNewRecurrence) {
+          setRefreshToken((current) => current + 1);
+        }
         return true;
       } catch {
         setDayErrors((current) => ({ ...current, [date]: 'Chưa lưu được. Hãy thử lại.' }));
@@ -1180,26 +1216,81 @@
 
     function openDialog(date) {
       setNewTitle('');
+      setStartTime('');
+      setDurationHours('');
+      setDurationMinutes('');
+      setRepeat('none');
+      setEditingTaskId('');
+      setEditScope('occurrence');
       setActiveDate(date);
+    }
+
+    function editTask(task) {
+      setEditingTaskId(task.id);
+      setNewTitle(task.title);
+      setStartTime(task.startTime || '');
+      setDurationHours(task.durationHours == null ? '' : String(task.durationHours));
+      setDurationMinutes(task.durationMinutes == null ? '' : String(task.durationMinutes));
+      setRepeat(task.repeat || 'none');
+      setEditScope('occurrence');
+    }
+
+    function clearTaskForm() {
+      setNewTitle('');
+      setStartTime('');
+      setDurationHours('');
+      setDurationMinutes('');
+      setRepeat('none');
+      setEditingTaskId('');
+      setEditScope('occurrence');
     }
 
     function closeDialog() {
       setActiveDate('');
-      setNewTitle('');
+      clearTaskForm();
     }
 
-    async function addTask(event) {
+    async function saveTask(event) {
       event.preventDefault();
       const title = newTitle.trim();
       if (!title || !activeDate || savingDates[activeDate]) return;
-      if (title.length > MAX_TASK_TITLE_LENGTH || selectedTasks.length >= MAX_TASKS_PER_DAY) return;
+      if (title.length > MAX_TASK_TITLE_LENGTH) return;
+      const details = {
+        title,
+        startTime: startTime || null,
+        durationHours: durationHours === '' ? null : Number(durationHours),
+        durationMinutes: durationMinutes === '' ? null : Number(durationMinutes),
+        repeat: editingRecurringTask && editScope === 'occurrence'
+          ? editingTask.repeat
+          : repeat
+      };
 
+      if (editingTask) {
+        const updatedTask = { ...editingTask, ...details };
+        const tasks = selectedTasks.map((task) =>
+          task.id === editingTask.id ? updatedTask : task
+        );
+        const seriesUpdate = editingRecurringTask && editScope === 'series'
+          ? {
+            seriesId: editingTask.seriesId,
+            title: details.title,
+            startTime: details.startTime,
+            durationHours: details.durationHours,
+            durationMinutes: details.durationMinutes,
+            repeat: details.repeat
+          }
+          : null;
+        if (await saveTasks(activeDate, tasks, seriesUpdate)) closeDialog();
+        return;
+      }
+
+      if (selectedTasks.length >= MAX_TASKS_PER_DAY) return;
       const task = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        title,
-        done: false
+        ...details,
+        done: false,
       };
-      if (await saveTasks(activeDate, [...selectedTasks, task])) closeDialog();
+      if (await saveTasks(activeDate, [...selectedTasks, task])) clearTaskForm();
     }
 
     async function toggleTask(date, taskId) {
@@ -1265,12 +1356,14 @@
           }, 'Thử tải lại')
         ),
         h('main', { className: 'calendar-section', 'aria-label': 'Lịch trình theo tháng' },
-          ['pet-fish-small', '', 'pet-fish-tiny', 'pet-fish-large', 'pet-fish-medium']
-            .map((sizeClass, index) => h(AnimalSticker, {
-              key: `fish-${index}`,
-              animal: 'fish',
-              className: `pet-fish pet-fish-${index + 1}${sizeClass ? ` ${sizeClass}` : ''}`
-            })),
+          h('div', { className: 'fish-school', 'aria-hidden': 'true' },
+            ['fish-school-small', 'fish-school-medium', 'fish-school-small']
+              .map((sizeClass, index) => h(AnimalSticker, {
+                key: `fish-${index}`,
+                animal: 'fish',
+                className: `fish-school-member ${sizeClass}`
+              }))
+          ),
           h('div', { className: 'calendar-toolbar' },
             h('div', { className: 'month-heading' },
               h('span', { className: 'section-kicker' }, 'KẾ HOẠCH CỦA BẠN'),
@@ -1364,7 +1457,8 @@
                   title: task.title
                 },
                 h('span', { className: 'task-check', 'aria-hidden': 'true' }, task.done ? '✓' : ''),
-                h('span', { className: 'task-title' }, task.title)),
+                h('span', { className: 'task-title' },
+                  `${task.startTime ? `${task.startTime} ` : ''}${task.title}`)),
                 h('button', {
                   type: 'button',
                   className: 'task-delete',
@@ -1418,7 +1512,7 @@
         onClick: closeDialog,
         'aria-label': 'Đóng'
       }, '×'),
-      h('span', { className: 'section-kicker' }, 'THÊM VÀO LỊCH'),
+      h('span', { className: 'section-kicker' }, editingTask ? 'CHỈNH SỬA CÔNG VIỆC' : 'THÊM VÀO LỊCH'),
       h('h2', { id: 'dialog-title' }, `${pad(Number(activeDate.slice(-2)))}/${pad(month + 1)}/${year}`),
       h('p', { className: 'dialog-lunar-date' },
         `Âm lịch: ${lunarDateLabel(toLunarDate(
@@ -1427,7 +1521,8 @@
           Number(activeDate.slice(0, 4))
         ))}`
       ),
-      h('p', { className: 'dialog-description' }, 'Việc gì bạn muốn nhớ làm vào ngày này?'),
+      h('p', { className: 'dialog-description' },
+        editingTask ? 'Cập nhật thông tin công việc của bạn.' : 'Việc gì bạn muốn nhớ làm vào ngày này?'),
       dayErrors[activeDate] && h('p', { className: 'dialog-error', role: 'alert' }, dayErrors[activeDate]),
       selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
         h('h3', null, `Việc trong ngày này (${selectedTasks.length})`),
@@ -1437,13 +1532,31 @@
         },
         h('button', {
           type: 'button',
-          className: 'task-toggle',
+          className: 'task-toggle dialog-task-toggle',
           disabled: Boolean(savingDates[activeDate]),
           onClick: () => toggleTask(activeDate, task.id),
           'aria-label': `${task.done ? 'Đánh dấu chưa xong' : 'Hoàn thành'}: ${task.title}`
         },
         h('span', { className: 'task-check', 'aria-hidden': 'true' }, task.done ? '✓' : ''),
-        h('span', { className: 'task-title' }, task.title)),
+        h('span', { className: 'dialog-task-copy' },
+          h('span', { className: 'task-title' }, task.title),
+          h('span', { className: 'dialog-task-meta' },
+            [
+              task.startTime,
+              task.durationHours != null || task.durationMinutes != null
+                ? `${task.durationHours || 0}h ${task.durationMinutes || 0}m`
+                : '',
+              task.repeat && task.repeat !== 'none' ? REPEAT_LABELS[task.repeat] : ''
+            ].filter(Boolean).join(' · ')
+          ))
+        ),
+        h('button', {
+          type: 'button',
+          className: 'dialog-task-edit',
+          disabled: Boolean(savingDates[activeDate]),
+          onClick: () => editTask(task),
+          'aria-label': `Sửa công việc: ${task.title}`
+        }, 'Sửa'),
         h('button', {
           type: 'button',
           className: 'dialog-task-delete',
@@ -1452,7 +1565,30 @@
           'aria-label': `Xóa công việc: ${task.title}`
         }, 'Xóa')))
       ),
-      h('form', { onSubmit: addTask },
+      editingRecurringTask && h('fieldset', { className: 'edit-scope' },
+        h('legend', null, 'Áp dụng thay đổi'),
+        h('label', null,
+          h('input', {
+            type: 'radio',
+            name: 'edit-scope',
+            value: 'occurrence',
+            checked: editScope === 'occurrence',
+            onChange: () => setEditScope('occurrence')
+          }),
+          ' Chỉ lần này'
+        ),
+        h('label', null,
+          h('input', {
+            type: 'radio',
+            name: 'edit-scope',
+            value: 'series',
+            checked: editScope === 'series',
+            onChange: () => setEditScope('series')
+          }),
+          ' Toàn bộ chuỗi'
+        )
+      ),
+      h('form', { onSubmit: saveTask },
         h('label', { className: 'sr-only', htmlFor: 'new-task-title' }, 'Tên công việc'),
         h('input', {
           ref: titleInput,
@@ -1465,16 +1601,92 @@
           onChange: (event) => setNewTitle(event.target.value),
           required: true
         }),
+        h('div', { className: 'task-options' },
+          h('label', { className: 'task-option' },
+            h('span', null, 'Thời gian bắt đầu'),
+            h('input', {
+              className: 'task-input task-option-input',
+              type: 'time',
+              value: startTime,
+              onChange: (event) => setStartTime(event.target.value),
+              'aria-label': 'Thời gian bắt đầu'
+            })
+          ),
+          h('fieldset', { className: 'task-option duration-option' },
+            h('legend', null, 'Thời lượng'),
+            h('div', { className: 'duration-inputs' },
+              h('label', null,
+                h('input', {
+                  className: 'task-input task-option-input',
+                  type: 'number',
+                  min: 0,
+                  max: 999,
+                  step: 1,
+                  inputMode: 'numeric',
+                  placeholder: '0',
+                  value: durationHours,
+                  onChange: (event) => setDurationHours(event.target.value),
+                  'aria-label': 'Số giờ'
+                }),
+                h('span', null, 'giờ')
+              ),
+              h('label', null,
+                h('input', {
+                  className: 'task-input task-option-input',
+                  type: 'number',
+                  min: 0,
+                  max: 59,
+                  step: 1,
+                  inputMode: 'numeric',
+                  placeholder: '0',
+                  value: durationMinutes,
+                  onChange: (event) => setDurationMinutes(event.target.value),
+                  'aria-label': 'Số phút'
+                }),
+                h('span', null, 'phút')
+              )
+            )
+          ),
+          editingRecurringTask && editScope === 'occurrence'
+            ? h('p', { className: 'repeat-readonly' },
+              `Lặp lại: ${REPEAT_LABELS[editingTask.repeat]}`
+            )
+            : h('label', { className: 'task-option' },
+              h('span', null, 'Lặp lại'),
+              h('select', {
+                className: 'task-input task-option-input',
+                value: repeat,
+                onChange: (event) => setRepeat(event.target.value),
+                'aria-label': 'Tần suất lặp lại'
+              },
+              Object.entries(REPEAT_LABELS)
+                .filter(([value]) => !editingRecurringTask || value !== 'none')
+                .map(([value, label]) =>
+                h('option', { key: value, value }, label)
+                )
+              )
+            )
+        ),
+        repeat !== 'none' && !editingRecurringTask &&
+          h('p', { className: 'repeat-note' }, 'Công việc sẽ lặp trong tối đa 5 năm kể từ ngày bắt đầu.'),
         h('div', { className: 'dialog-footer' },
           h('span', { className: 'input-counter' }, `${newTitle.length}/${MAX_TASK_TITLE_LENGTH}`),
-          h('button', {
-            type: 'submit',
-            className: 'btn btn-save',
-            disabled: !newTitle.trim() || Boolean(savingDates[activeDate]) ||
-              selectedTasks.length >= MAX_TASKS_PER_DAY
-          }, savingDates[activeDate] ? 'Đang lưu...' : 'Thêm công việc')
+          h('div', { className: 'dialog-actions' },
+            editingTask && h('button', {
+              type: 'button',
+              className: 'btn btn-cancel',
+              onClick: clearTaskForm,
+              disabled: Boolean(savingDates[activeDate])
+            }, 'Hủy bỏ'),
+            h('button', {
+              type: 'submit',
+              className: 'btn btn-save',
+              disabled: !newTitle.trim() || Boolean(savingDates[activeDate]) ||
+                (!editingTask && selectedTasks.length >= MAX_TASKS_PER_DAY)
+            }, savingDates[activeDate] ? 'Đang lưu...' : editingTask ? 'Lưu thay đổi' : 'Thêm công việc')
+          )
         ),
-        selectedTasks.length >= MAX_TASKS_PER_DAY &&
+        !editingTask && selectedTasks.length >= MAX_TASKS_PER_DAY &&
           h('p', { className: 'dialog-error', role: 'status' }, 'Ngày này đã đạt giới hạn 20 công việc.')
       ))
       ),

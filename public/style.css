@@ -270,7 +270,7 @@ button {
 .month-heading h2 {
   margin: 5px 0 0;
   font-family: "Manrope", sans-serif;
-  font-size: 25px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.045em;
 }
@@ -356,7 +356,7 @@ button {
   place-items: center;
   background: #f7f8f5;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -417,7 +417,7 @@ button {
   place-items: center;
   border-radius: 50%;
   color: #485449;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -425,7 +425,7 @@ button {
 .lunar-date {
   overflow: hidden;
   color: #89948a;
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -532,7 +532,7 @@ button {
 .task-title {
   display: block;
   overflow: hidden;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -574,14 +574,14 @@ button {
   overflow: hidden;
   padding: 1px 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cell-error {
   color: var(--danger);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .loading-note {
@@ -662,6 +662,10 @@ button {
   box-shadow: 0 24px 80px rgba(25, 36, 28, 0.2);
 }
 
+.calendar-section .section-kicker {
+  font-size: 11px;
+}
+
 .dialog-close {
   position: absolute;
   top: 16px;
@@ -719,6 +723,17 @@ button {
   padding: 5px 7px;
 }
 
+.dialog-task-toggle {
+  min-height: 34px;
+}
+
+.dialog-task-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
 .dialog-task .task-check {
   width: 15px;
   height: 15px;
@@ -726,7 +741,6 @@ button {
 }
 
 .dialog-task .task-title {
-  flex: 1;
   min-width: 0;
   overflow: visible;
   font-size: 12px;
@@ -734,9 +748,33 @@ button {
   white-space: normal;
 }
 
+.dialog-task-meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dialog-task-edit {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dialog-task-edit:hover {
+  background: #dce8da;
+}
+
 .dialog-task-delete {
   flex: 0 0 auto;
   align-self: flex-start;
+  min-height: 28px;
   padding: 4px 7px;
   border: 0;
   border-radius: 6px;
@@ -773,6 +811,102 @@ button {
   color: #a3aaa1;
 }
 
+.task-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.task-option {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.task-option-input {
+  min-height: 40px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.duration-option {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.duration-option legend {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.duration-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.duration-inputs label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.duration-inputs input {
+  min-width: 0;
+}
+
+.duration-inputs span {
+  font-size: 10px;
+}
+
+.repeat-readonly {
+  align-self: end;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.repeat-note {
+  margin: 8px 0 0;
+  color: var(--green);
+  font-size: 10px;
+}
+
+.edit-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.edit-scope legend {
+  padding: 0 4px;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.edit-scope label {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
 .dialog-footer {
   display: flex;
   align-items: center;
@@ -784,6 +918,29 @@ button {
 .input-counter {
   color: var(--muted);
   font-size: 10px;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-cancel {
+  min-height: 38px;
+  padding: 8px 14px;
+  border-color: var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  border-color: #cbd9c7;
+  background: #f7faf5;
+  color: var(--green-dark);
 }
 
 .btn-save {
@@ -842,8 +999,10 @@ button {
 .task-toggle:focus-visible,
 .task-delete:focus-visible,
 .dialog-task-delete:focus-visible,
+.dialog-task-edit:focus-visible,
 .dialog-close:focus-visible,
-.task-input:focus-visible {
+.task-input:focus-visible,
+.edit-scope input:focus-visible {
   outline: 3px solid rgba(87, 122, 96, 0.3);
   outline-offset: 2px;
 }
@@ -946,7 +1105,11 @@ button {
   }
 
   .month-heading h2 {
-    font-size: 17px;
+    font-size: 18px;
+  }
+
+  .calendar-section .section-kicker {
+    font-size: 9px;
   }
 
   .calendar-controls {
@@ -975,7 +1138,7 @@ button {
 
   .weekday {
     min-height: 31px;
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .weekday-full {
@@ -1003,7 +1166,7 @@ button {
   .date-number {
     width: 24px;
     height: 24px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .lunar-date {
@@ -1028,7 +1191,7 @@ button {
     border-radius: 999px;
     background: var(--green-soft);
     color: var(--green-dark);
-    font-size: 8px;
+    font-size: 9px;
     line-height: 1.4;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1064,8 +1227,21 @@ button {
     margin-top: 0;
   }
 
+  .dialog-task-toggle {
+    min-height: 44px;
+  }
+
   .dialog-task .task-title {
     font-size: 14px;
+  }
+
+  .dialog-task-meta {
+    font-size: 11px;
+  }
+
+  .dialog-task-edit {
+    min-height: 44px;
+    padding-inline: 12px;
   }
 
   .dialog-task-delete {
@@ -1075,11 +1251,11 @@ button {
 
   .more-tasks {
     padding-inline: 1px;
-    font-size: 7px;
+    font-size: 8px;
   }
 
   .cell-error {
-    font-size: 8px;
+    font-size: 9px;
   }
 
   .legend-item,
@@ -1113,6 +1289,12 @@ button {
     padding-inline: 18px;
     font-size: 13px;
   }
+
+  .btn-cancel {
+    min-height: 44px;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
 }
 
 @media (max-width: 380px) {
@@ -1132,7 +1314,7 @@ button {
 
   .mobile-task-count {
     padding-inline: 3px;
-    font-size: 7px;
+    font-size: 8px;
   }
 }
 
@@ -1846,40 +2028,27 @@ button {
   height: 66px;
 }
 
-.pet-fish {
+.fish-school {
   position: absolute;
   z-index: 1;
-  top: -10px;
-  left: 10%;
-  width: 46px;
-  height: 38px;
-}
-
-.pet-fish-2 {
-  left: 30%;
-  width: 56px;
-  height: 46px;
-}
-
-.pet-fish-3 {
-  top: -7px;
+  top: -17px;
   left: 50%;
-  width: 40px;
-  height: 34px;
+  display: flex;
+  width: max-content;
+  align-items: center;
+  margin-left: -66px;
+  pointer-events: none;
 }
 
-.pet-fish-4 {
-  top: -12px;
-  left: 70%;
-  width: 62px;
-  height: 50px;
-}
-
-.pet-fish-5 {
-  top: -8px;
-  left: 88%;
-  width: 44px;
+.fish-school-member {
+  position: relative;
+  width: 42px;
   height: 36px;
+}
+
+.fish-school-medium {
+  width: 48px;
+  height: 42px;
 }
 
 .fish-bubble {
@@ -1942,36 +2111,18 @@ button {
     height: 54px;
   }
 
-  .pet-fish {
-    top: -8px;
-    width: 38px;
-    height: 32px;
+  .fish-school {
+    top: -14px;
+    margin-left: -56px;
   }
 
-  .pet-fish-2 {
-    left: 29%;
-    width: 44px;
-    height: 36px;
-  }
-
-  .pet-fish-3 {
-    top: -6px;
-    left: 49%;
-    width: 34px;
-    height: 29px;
-  }
-
-  .pet-fish-4 {
-    top: -10px;
-    left: 69%;
-    width: 48px;
-    height: 40px;
-  }
-
-  .pet-fish-5 {
-    top: -6px;
-    left: 87%;
+  .fish-school-member {
     width: 36px;
-    height: 30px;
+    height: 31px;
+  }
+
+  .fish-school-medium {
+    width: 40px;
+    height: 35px;
   }
 }

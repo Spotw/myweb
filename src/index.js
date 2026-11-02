@@ -2,6 +2,8 @@ const DAY_COUNT = 7;
 const MAX_LENGTH = 5000;
 const MAX_TASKS_PER_DAY = 20;
 const MAX_TASK_TITLE_LENGTH = 100;
+const MAX_RECURRENCE_YEARS = 5;
+const RECURRENCE_FREQUENCIES = new Set(['none', 'daily', 'weekly', 'monthly', 'yearly']);
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_COOKIE = 'myweb_session';
 const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
@@ -52,6 +54,23 @@ const isValidTaskList = (tasks) => {
       task.title.trim().length === 0 ||
       task.title.length > MAX_TASK_TITLE_LENGTH ||
       typeof task.done !== 'boolean' ||
+      (task.startTime != null &&
+        (typeof task.startTime !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(task.startTime))) ||
+      (task.durationHours != null &&
+        (!Number.isInteger(task.durationHours) || task.durationHours < 0 || task.durationHours > 999)) ||
+      (task.durationMinutes != null &&
+        (!Number.isInteger(task.durationMinutes) || task.durationMinutes < 0 || task.durationMinutes > 59)) ||
+      (task.repeat != null && !RECURRENCE_FREQUENCIES.has(task.repeat)) ||
+      (task.seriesId != null &&
+        (typeof task.seriesId !== 'string' || task.seriesId.length === 0 || task.seriesId.length > 80)) ||
+      (task.occurrenceDate != null &&
+        (typeof task.occurrenceDate !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(task.occurrenceDate) ||
+          !isValidDate(
+            Number(task.occurrenceDate.slice(0, 4)),
+            Number(task.occurrenceDate.slice(5, 7)),
+            Number(task.occurrenceDate.slice(8, 10))
+          ))) ||
       ids.has(task.id)
     ) {
       return false;
@@ -393,16 +412,24 @@ const tableForUser = (username) => {
   return `schedule_${username.toLowerCase()}`;
 };
 
-async function ensureScheduleTable(db, username) {
+async function ensureScheduleTables(db, username) {
   const usernameHash = new Uint8Array(
     await crypto.subtle.digest('SHA-256', encoder.encode(username.toLowerCase()))
   );
   const suffix = Array.from(usernameHash, (byte) => byte.toString(16).padStart(2, '0')).join('');
   const table = tableForUser(suffix);
+  const recurrenceTable = `${table}_recurrences`;
+  const overrideTable = `${table}_overrides`;
   await db.prepare(
     `CREATE TABLE IF NOT EXISTS "${table}" (date TEXT PRIMARY KEY, tasks TEXT NOT NULL)`
   ).run();
-  return table;
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS "${recurrenceTable}" (id TEXT PRIMARY KEY, start_date TEXT NOT NULL, task TEXT NOT NULL)`
+  ).run();
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS "${overrideTable}" (series_id TEXT NOT NULL, date TEXT NOT NULL, task TEXT, canceled INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (series_id, date))`
+  ).run();
+  return { table, recurrenceTable, overrideTable };
 }
 
 async function handleAuth(request, env, pathname) {
@@ -497,6 +524,49 @@ async function handleAuth(request, env, pathname) {
   return null;
 }
 
+const addYearsToDate = (date, years) => {
+  const [year, month, day] = date.split('-').map(Number);
+  const targetYear = Math.min(9999, year + years);
+  return `${String(targetYear).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(
+    Math.min(day, daysInMonth(targetYear, month))
+  ).padStart(2, '0')}`;
+};
+
+const recurrenceStartCutoff = (year, month) =>
+  `${String(Math.max(1, year - MAX_RECURRENCE_YEARS)).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+
+function isRecurrenceDate(startDate, repeat, date) {
+  if (date < startDate || date > addYearsToDate(startDate, MAX_RECURRENCE_YEARS)) return false;
+  const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+  const [year, month, day] = date.split('-').map(Number);
+  if (repeat === 'daily') return true;
+  if (repeat === 'weekly') {
+    const start = Date.UTC(startYear, startMonth - 1, startDay);
+    const current = Date.UTC(year, month - 1, day);
+    return Math.floor((current - start) / 86400000) % 7 === 0;
+  }
+  if (repeat === 'monthly') return day === Math.min(startDay, daysInMonth(year, month));
+  if (repeat === 'yearly') {
+    return month === startMonth && day === Math.min(startDay, daysInMonth(year, month));
+  }
+  return false;
+}
+
+const taskDetails = (task) => ({
+  title: task.title,
+  done: task.done,
+  startTime: task.startTime || null,
+  durationHours: task.durationHours ?? null,
+  durationMinutes: task.durationMinutes ?? null,
+  repeat: task.repeat || 'none'
+});
+
+const sameTaskDetails = (left, right) => {
+  const leftDetails = taskDetails(left);
+  const rightDetails = taskDetails(right);
+  return Object.keys(leftDetails).every((key) => leftDetails[key] === rightDetails[key]);
+};
+
 async function handleSchedule(request, db, username, pathname, url) {
   if (pathname === '/api/tasks') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
@@ -512,7 +582,7 @@ async function handleSchedule(request, db, username, pathname, url) {
     const days = daysInMonth(year, monthNumber);
     const firstKey = `${month}-01`;
     const lastKey = `${month}-${String(days).padStart(2, '0')}`;
-    const table = await ensureScheduleTable(db, username);
+    const { table, recurrenceTable, overrideTable } = await ensureScheduleTables(db, username);
     const { results } = await db.prepare(
       `SELECT date, tasks FROM "${table}" WHERE date >= ? AND date <= ?`
     ).bind(firstKey, lastKey).all();
@@ -525,7 +595,45 @@ async function handleSchedule(request, db, username, pathname, url) {
     for (const { date, tasks } of results) {
       const parsedTasks = JSON.parse(tasks);
       if (!isValidTaskList(parsedTasks)) throw new Error(`Dữ liệu công việc không hợp lệ: ${date}`);
-      tasksByDate[date] = parsedTasks;
+      tasksByDate[date] = parsedTasks.map((task) => ({ ...task, repeat: task.repeat || 'none' }));
+    }
+
+    const cutoff = recurrenceStartCutoff(year, monthNumber);
+    const { results: recurringTasks } = await db.prepare(
+      `SELECT id, start_date, task FROM "${recurrenceTable}"
+       WHERE start_date >= ? AND start_date <= ?`
+    ).bind(cutoff, lastKey).all();
+    const { results: overrides } = await db.prepare(
+      `SELECT series_id, date, task, canceled FROM "${overrideTable}"
+       WHERE date >= ? AND date <= ?`
+    ).bind(firstKey, lastKey).all();
+    const overridesByOccurrence = new Map(
+      overrides.map((override) => [
+        `${override.series_id}:${override.date}`,
+        override.canceled ? { canceled: true } : JSON.parse(override.task)
+      ])
+    );
+
+    for (const series of recurringTasks) {
+      const task = JSON.parse(series.task);
+      if (!isValidTaskList([task]) || !RECURRENCE_FREQUENCIES.has(task.repeat) || task.repeat === 'none') {
+        throw new Error(`Dữ liệu lặp lại không hợp lệ: ${series.id}`);
+      }
+      const occurrenceStart = series.start_date > firstKey ? series.start_date : firstKey;
+      for (let day = Number(occurrenceStart.slice(8, 10)); day <= days; day += 1) {
+        const date = `${month}-${String(day).padStart(2, '0')}`;
+        if (!isRecurrenceDate(series.start_date, task.repeat, date)) continue;
+        const override = overridesByOccurrence.get(`${series.id}:${date}`);
+        if (override?.canceled) continue;
+        tasksByDate[date].push({
+          ...task,
+          ...(override || {}),
+          id: series.id,
+          seriesId: series.id,
+          occurrenceDate: date,
+          repeat: task.repeat
+        });
+      }
     }
     return json({ tasks: tasksByDate });
   }
@@ -539,18 +647,135 @@ async function handleSchedule(request, db, username, pathname, url) {
     }
 
     const body = await readJson(request);
-    if (!body || !isValidTaskList(body.tasks)) {
+    const seriesUpdate = body?.seriesUpdate;
+    if (
+      !body ||
+      !isValidTaskList(body.tasks) ||
+      (seriesUpdate != null && (
+        typeof seriesUpdate.seriesId !== 'string' ||
+        !isValidTaskList([{
+          id: seriesUpdate.seriesId,
+          title: seriesUpdate.title,
+          done: false,
+          startTime: seriesUpdate.startTime,
+          durationHours: seriesUpdate.durationHours,
+          durationMinutes: seriesUpdate.durationMinutes,
+          repeat: seriesUpdate.repeat
+        }]) ||
+        (seriesUpdate.repeat != null && seriesUpdate.repeat === 'none')
+      ))
+    ) {
       return json({ error: `Mỗi ngày cần có tối đa ${MAX_TASKS_PER_DAY} công việc hợp lệ.` }, 400);
     }
 
     const date = `${year}-${month}-${day}`;
-    const table = await ensureScheduleTable(db, username);
-    if (body.tasks.length === 0) {
+    const { table, recurrenceTable, overrideTable } = await ensureScheduleTables(db, username);
+    const seriesIdsInBody = new Set(
+      body.tasks.filter((task) => task.seriesId).map((task) => task.seriesId)
+    );
+
+    if (seriesUpdate) {
+      if (!seriesIdsInBody.has(seriesUpdate.seriesId)) {
+        return json({ error: 'Không tìm thấy công việc lặp cần cập nhật.' }, 400);
+      }
+      const { results } = await db.prepare(
+        `SELECT task FROM "${recurrenceTable}" WHERE id = ?`
+      ).bind(seriesUpdate.seriesId).all();
+      if (!results.length) return json({ error: 'Chuỗi công việc không còn tồn tại.' }, 404);
+      const master = JSON.parse(results[0].task);
+      const updatedMaster = {
+        ...master,
+        title: seriesUpdate.title,
+        startTime: seriesUpdate.startTime || null,
+        durationHours: seriesUpdate.durationHours ?? null,
+        durationMinutes: seriesUpdate.durationMinutes ?? null,
+        repeat: seriesUpdate.repeat || master.repeat
+      };
+      await db.prepare(
+        `UPDATE "${recurrenceTable}" SET task = ? WHERE id = ?`
+      ).bind(JSON.stringify(updatedMaster), seriesUpdate.seriesId).run();
+      await db.prepare(
+        `DELETE FROM "${overrideTable}" WHERE series_id = ?`
+      ).bind(seriesUpdate.seriesId).run();
+    }
+
+    const cutoff = recurrenceStartCutoff(Number(year), Number(month));
+    const { results: recurringResults } = await db.prepare(
+      `SELECT id, start_date, task FROM "${recurrenceTable}"
+       WHERE start_date >= ? AND start_date <= ?`
+    ).bind(cutoff, date).all();
+    const activeSeries = new Map();
+    for (const series of recurringResults) {
+      const task = JSON.parse(series.task);
+      if (isRecurrenceDate(series.start_date, task.repeat, date)) {
+        activeSeries.set(series.id, { ...series, task });
+      }
+    }
+
+    const regularTasks = [];
+    for (const task of body.tasks) {
+      if (task.seriesId) {
+        if (task.occurrenceDate !== date) {
+          return json({ error: 'Công việc lặp không hợp lệ.' }, 400);
+        }
+        if (!activeSeries.has(task.seriesId)) {
+          if (seriesUpdate?.seriesId === task.seriesId) continue;
+          return json({ error: 'Công việc lặp không hợp lệ.' }, 400);
+        }
+        continue;
+      }
+      if (task.repeat && task.repeat !== 'none') {
+        const recurringTask = { ...task, done: false };
+        await db.prepare(
+          `INSERT INTO "${recurrenceTable}" (id, start_date, task) VALUES (?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET start_date = excluded.start_date, task = excluded.task`
+        ).bind(task.id, date, JSON.stringify(recurringTask)).run();
+        activeSeries.set(task.id, { id: task.id, start_date: date, task: recurringTask });
+        seriesIdsInBody.add(task.id);
+      } else {
+        regularTasks.push({ ...task, repeat: 'none' });
+      }
+    }
+
+    for (const [seriesId, series] of activeSeries) {
+      const occurrence = body.tasks.find((task) => task.seriesId === seriesId);
+      if (!occurrence) {
+        if (!seriesIdsInBody.has(seriesId)) {
+          await db.prepare(
+            `INSERT INTO "${overrideTable}" (series_id, date, task, canceled) VALUES (?, ?, NULL, 1)
+             ON CONFLICT(series_id, date) DO UPDATE SET task = NULL, canceled = 1`
+          ).bind(seriesId, date).run();
+        }
+        continue;
+      }
+      if (seriesUpdate?.seriesId === seriesId) {
+        await db.prepare(
+          `DELETE FROM "${overrideTable}" WHERE series_id = ? AND date = ?`
+        ).bind(seriesId, date).run();
+        continue;
+      }
+      const overriddenTask = {
+        ...taskDetails(occurrence),
+        id: seriesId
+      };
+      if (sameTaskDetails(occurrence, series.task)) {
+        await db.prepare(
+          `DELETE FROM "${overrideTable}" WHERE series_id = ? AND date = ?`
+        ).bind(seriesId, date).run();
+      } else {
+        await db.prepare(
+          `INSERT INTO "${overrideTable}" (series_id, date, task, canceled) VALUES (?, ?, ?, 0)
+           ON CONFLICT(series_id, date) DO UPDATE SET task = excluded.task, canceled = 0`
+        ).bind(seriesId, date, JSON.stringify(overriddenTask)).run();
+      }
+    }
+
+    if (regularTasks.length === 0) {
       await db.prepare(`DELETE FROM "${table}" WHERE date = ?`).bind(date).run();
     } else {
       await db.prepare(
         `INSERT INTO "${table}" (date, tasks) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET tasks = excluded.tasks`
-      ).bind(date, JSON.stringify(body.tasks)).run();
+      ).bind(date, JSON.stringify(regularTasks)).run();
     }
     return json({ ok: true });
   }
