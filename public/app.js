@@ -20,6 +20,12 @@
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
   const pad = (value) => String(value).padStart(2, '0');
   const dateKey = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`;
+  const dateAfterYears = (date, years) => {
+    const [year, month, day] = date.split('-').map(Number);
+    const targetYear = year + years;
+    const lastDay = new Date(targetYear, month, 0).getDate();
+    return `${targetYear}-${pad(month)}-${pad(Math.min(day, lastDay))}`;
+  };
 
   function julianDay(day, month, year) {
     const adjustedMonth = Math.floor((14 - month) / 12);
@@ -988,6 +994,7 @@
     const [durationHours, setDurationHours] = useState('');
     const [durationMinutes, setDurationMinutes] = useState('');
     const [repeat, setRepeat] = useState('none');
+    const [repeatUntil, setRepeatUntil] = useState('');
     const [editingTaskId, setEditingTaskId] = useState('');
     const [editScope, setEditScope] = useState('occurrence');
     const titleInput = useRef(null);
@@ -1196,11 +1203,23 @@
         const hasNewRecurrence = tasks.some((task) =>
           !task.seriesId && task.repeat && task.repeat !== 'none'
         );
-        const displayedTasks = tasks.map((task) =>
-          !task.seriesId && task.repeat && task.repeat !== 'none'
+        const displayedTasks = tasks.map((task) => {
+          if (seriesUpdate?.seriesId === task.seriesId && seriesUpdate.repeat === 'none') {
+            const standaloneTask = { ...task };
+            delete standaloneTask.seriesId;
+            delete standaloneTask.occurrenceDate;
+            delete standaloneTask.repeatStartDate;
+            return {
+              ...standaloneTask,
+              id: seriesUpdate.seriesId,
+              repeat: 'none',
+              repeatUntil: null
+            };
+          }
+          return !task.seriesId && task.repeat && task.repeat !== 'none'
             ? { ...task, seriesId: task.id, occurrenceDate: date }
-            : task
-        );
+            : task;
+        });
         setDateTasks(date, displayedTasks);
         if (seriesUpdate || hasNewRecurrence) {
           setRefreshToken((current) => current + 1);
@@ -1220,6 +1239,7 @@
       setDurationHours('');
       setDurationMinutes('');
       setRepeat('none');
+      setRepeatUntil(dateAfterYears(date, 5));
       setEditingTaskId('');
       setEditScope('occurrence');
       setActiveDate(date);
@@ -1232,6 +1252,7 @@
       setDurationHours(task.durationHours == null ? '' : String(task.durationHours));
       setDurationMinutes(task.durationMinutes == null ? '' : String(task.durationMinutes));
       setRepeat(task.repeat || 'none');
+      setRepeatUntil(task.repeatUntil || dateAfterYears(task.repeatStartDate || activeDate, 5));
       setEditScope('occurrence');
     }
 
@@ -1241,6 +1262,7 @@
       setDurationHours('');
       setDurationMinutes('');
       setRepeat('none');
+      setRepeatUntil('');
       setEditingTaskId('');
       setEditScope('occurrence');
     }
@@ -1262,7 +1284,10 @@
         durationMinutes: durationMinutes === '' ? null : Number(durationMinutes),
         repeat: editingRecurringTask && editScope === 'occurrence'
           ? editingTask.repeat
-          : repeat
+          : repeat,
+        repeatUntil: editingRecurringTask && editScope === 'occurrence'
+          ? editingTask.repeatUntil
+          : repeat === 'none' ? null : repeatUntil
       };
 
       if (editingTask) {
@@ -1277,7 +1302,8 @@
             startTime: details.startTime,
             durationHours: details.durationHours,
             durationMinutes: details.durationMinutes,
-            repeat: details.repeat
+            repeat: details.repeat,
+            repeatUntil: details.repeatUntil
           }
           : null;
         if (await saveTasks(activeDate, tasks, seriesUpdate)) closeDialog();
@@ -1659,16 +1685,35 @@
                 onChange: (event) => setRepeat(event.target.value),
                 'aria-label': 'Tần suất lặp lại'
               },
-              Object.entries(REPEAT_LABELS)
-                .filter(([value]) => !editingRecurringTask || value !== 'none')
-                .map(([value, label]) =>
+              Object.entries(REPEAT_LABELS).map(([value, label]) =>
                 h('option', { key: value, value }, label)
-                )
-              )
+              ))
+            ),
+          repeat !== 'none' && (editingRecurringTask && editScope === 'occurrence'
+            ? h('p', { className: 'repeat-readonly repeat-until-readonly' },
+              `Lặp lại đến ${editingTask.repeatUntil.split('-').reverse().join('/')}`
             )
+            : h('label', { className: 'task-option' },
+              h('span', null, 'Lặp lại đến'),
+              h('input', {
+                className: 'task-input task-option-input',
+                type: 'date',
+                min: activeDate,
+                max: dateAfterYears(
+                  editingRecurringTask ? editingTask.repeatStartDate : activeDate,
+                  5
+                ),
+                value: repeatUntil,
+                onChange: (event) => setRepeatUntil(event.target.value),
+                required: true,
+                'aria-label': 'Ngày kết thúc lặp lại'
+              })
+            ))
         ),
-        repeat !== 'none' && !editingRecurringTask &&
-          h('p', { className: 'repeat-note' }, 'Công việc sẽ lặp trong tối đa 5 năm kể từ ngày bắt đầu.'),
+        repeat !== 'none' && (!editingRecurringTask || editScope === 'series') &&
+          h('p', { className: 'repeat-note' },
+            'Ngày kết thúc lặp không được quá 5 năm kể từ ngày bắt đầu.'
+          ),
         h('div', { className: 'dialog-footer' },
           h('span', { className: 'input-counter' }, `${newTitle.length}/${MAX_TASK_TITLE_LENGTH}`),
           h('div', { className: 'dialog-actions' },

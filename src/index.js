@@ -61,6 +61,14 @@ const isValidTaskList = (tasks) => {
       (task.durationMinutes != null &&
         (!Number.isInteger(task.durationMinutes) || task.durationMinutes < 0 || task.durationMinutes > 59)) ||
       (task.repeat != null && !RECURRENCE_FREQUENCIES.has(task.repeat)) ||
+      (task.repeatUntil != null &&
+        (typeof task.repeatUntil !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(task.repeatUntil) ||
+          !isValidDate(
+            Number(task.repeatUntil.slice(0, 4)),
+            Number(task.repeatUntil.slice(5, 7)),
+            Number(task.repeatUntil.slice(8, 10))
+          ))) ||
       (task.seriesId != null &&
         (typeof task.seriesId !== 'string' || task.seriesId.length === 0 || task.seriesId.length > 80)) ||
       (task.occurrenceDate != null &&
@@ -532,11 +540,27 @@ const addYearsToDate = (date, years) => {
   ).padStart(2, '0')}`;
 };
 
+const previousDate = (date) => {
+  const [year, month, day] = date.split('-').map(Number);
+  if (day > 1) {
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day - 1).padStart(2, '0')}`;
+  }
+  if (month > 1) {
+    const previousMonth = month - 1;
+    return `${String(year).padStart(4, '0')}-${String(previousMonth).padStart(2, '0')}-${String(
+      daysInMonth(year, previousMonth)
+    ).padStart(2, '0')}`;
+  }
+  return `${String(year - 1).padStart(4, '0')}-12-31`;
+};
+
 const recurrenceStartCutoff = (year, month) =>
   `${String(Math.max(1, year - MAX_RECURRENCE_YEARS)).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
 
-function isRecurrenceDate(startDate, repeat, date) {
-  if (date < startDate || date > addYearsToDate(startDate, MAX_RECURRENCE_YEARS)) return false;
+function isRecurrenceDate(startDate, repeat, date, repeatUntil = null) {
+  const maximumEndDate = addYearsToDate(startDate, MAX_RECURRENCE_YEARS);
+  const endDate = repeatUntil && repeatUntil < maximumEndDate ? repeatUntil : maximumEndDate;
+  if (date < startDate || date > endDate) return false;
   const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
   const [year, month, day] = date.split('-').map(Number);
   if (repeat === 'daily') return true;
@@ -558,7 +582,8 @@ const taskDetails = (task) => ({
   startTime: task.startTime || null,
   durationHours: task.durationHours ?? null,
   durationMinutes: task.durationMinutes ?? null,
-  repeat: task.repeat || 'none'
+  repeat: task.repeat || 'none',
+  repeatUntil: task.repeatUntil || null
 });
 
 const sameTaskDetails = (left, right) => {
@@ -631,7 +656,9 @@ async function handleSchedule(request, db, username, pathname, url) {
           id: series.id,
           seriesId: series.id,
           occurrenceDate: date,
-          repeat: task.repeat
+          repeat: task.repeat,
+          repeatStartDate: series.start_date,
+          repeatUntil: task.repeatUntil || addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS)
         });
       }
     }
@@ -660,9 +687,10 @@ async function handleSchedule(request, db, username, pathname, url) {
           startTime: seriesUpdate.startTime,
           durationHours: seriesUpdate.durationHours,
           durationMinutes: seriesUpdate.durationMinutes,
-          repeat: seriesUpdate.repeat
+          repeat: seriesUpdate.repeat,
+          repeatUntil: seriesUpdate.repeatUntil
         }]) ||
-        (seriesUpdate.repeat != null && seriesUpdate.repeat === 'none')
+        (seriesUpdate.repeat != null && !RECURRENCE_FREQUENCIES.has(seriesUpdate.repeat))
       ))
     ) {
       return json({ error: `Mỗi ngày cần có tối đa ${MAX_TASKS_PER_DAY} công việc hợp lệ.` }, 400);
@@ -679,24 +707,37 @@ async function handleSchedule(request, db, username, pathname, url) {
         return json({ error: 'Không tìm thấy công việc lặp cần cập nhật.' }, 400);
       }
       const { results } = await db.prepare(
-        `SELECT task FROM "${recurrenceTable}" WHERE id = ?`
+        `SELECT start_date, task FROM "${recurrenceTable}" WHERE id = ?`
       ).bind(seriesUpdate.seriesId).all();
       if (!results.length) return json({ error: 'Chuỗi công việc không còn tồn tại.' }, 404);
       const master = JSON.parse(results[0].task);
+      const endingSeries = seriesUpdate.repeat === 'none';
       const updatedMaster = {
         ...master,
         title: seriesUpdate.title,
         startTime: seriesUpdate.startTime || null,
         durationHours: seriesUpdate.durationHours ?? null,
         durationMinutes: seriesUpdate.durationMinutes ?? null,
-        repeat: seriesUpdate.repeat || master.repeat
+        repeat: endingSeries
+          ? (date > results[0].start_date ? master.repeat : 'none')
+          : (seriesUpdate.repeat || master.repeat),
+        repeatUntil: endingSeries
+          ? (date > results[0].start_date ? previousDate(date) : null)
+          : (seriesUpdate.repeatUntil || master.repeatUntil || addYearsToDate(results[0].start_date, MAX_RECURRENCE_YEARS))
       };
+      if (!endingSeries && (
+        updatedMaster.repeatUntil < date ||
+        updatedMaster.repeatUntil < results[0].start_date ||
+        updatedMaster.repeatUntil > addYearsToDate(results[0].start_date, MAX_RECURRENCE_YEARS)
+      )) {
+        return json({ error: 'Ngày kết thúc lặp phải nằm trong vòng 5 năm kể từ ngày bắt đầu.' }, 400);
+      }
       await db.prepare(
         `UPDATE "${recurrenceTable}" SET task = ? WHERE id = ?`
       ).bind(JSON.stringify(updatedMaster), seriesUpdate.seriesId).run();
       await db.prepare(
-        `DELETE FROM "${overrideTable}" WHERE series_id = ?`
-      ).bind(seriesUpdate.seriesId).run();
+        `DELETE FROM "${overrideTable}" WHERE series_id = ? AND date >= ?`
+      ).bind(seriesUpdate.seriesId, date).run();
     }
 
     const cutoff = recurrenceStartCutoff(Number(year), Number(month));
@@ -706,8 +747,13 @@ async function handleSchedule(request, db, username, pathname, url) {
     ).bind(cutoff, date).all();
     const activeSeries = new Map();
     for (const series of recurringResults) {
-      const task = JSON.parse(series.task);
-      if (isRecurrenceDate(series.start_date, task.repeat, date)) {
+      const storedTask = JSON.parse(series.task);
+      const task = {
+        ...storedTask,
+        repeatUntil: storedTask.repeatUntil ||
+          addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS)
+      };
+      if (isRecurrenceDate(series.start_date, task.repeat, date, task.repeatUntil)) {
         activeSeries.set(series.id, { ...series, task });
       }
     }
@@ -718,6 +764,16 @@ async function handleSchedule(request, db, username, pathname, url) {
         if (task.occurrenceDate !== date) {
           return json({ error: 'Công việc lặp không hợp lệ.' }, 400);
         }
+        if (seriesUpdate?.seriesId === task.seriesId && seriesUpdate.repeat === 'none') {
+          regularTasks.push({
+            ...taskDetails(task),
+            id: task.seriesId,
+            done: task.done,
+            repeat: 'none',
+            repeatUntil: null
+          });
+          continue;
+        }
         if (!activeSeries.has(task.seriesId)) {
           if (seriesUpdate?.seriesId === task.seriesId) continue;
           return json({ error: 'Công việc lặp không hợp lệ.' }, 400);
@@ -725,7 +781,11 @@ async function handleSchedule(request, db, username, pathname, url) {
         continue;
       }
       if (task.repeat && task.repeat !== 'none') {
-        const recurringTask = { ...task, done: false };
+        const repeatUntil = task.repeatUntil || addYearsToDate(date, MAX_RECURRENCE_YEARS);
+        if (repeatUntil < date || repeatUntil > addYearsToDate(date, MAX_RECURRENCE_YEARS)) {
+          return json({ error: 'Ngày kết thúc lặp phải nằm trong vòng 5 năm kể từ ngày bắt đầu.' }, 400);
+        }
+        const recurringTask = { ...task, repeatUntil, done: false };
         await db.prepare(
           `INSERT INTO "${recurrenceTable}" (id, start_date, task) VALUES (?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET start_date = excluded.start_date, task = excluded.task`
