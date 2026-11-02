@@ -132,6 +132,69 @@
   const lunarDateLabel = (lunarDate) =>
     `${lunarDate.day}/${lunarDate.month}${lunarDate.isLeapMonth ? ' nhuận' : ''}`;
 
+  function AnimalSticker({ animal, className = '' }) {
+    const palette = animal === 'bird'
+      ? { body: '#eebb5e', detail: '#de9d45', inner: '#eb9b8e', eye: '#353d32' }
+      : animal === 'fish'
+        ? { body: '#72a9a0', detail: '#4d827d', inner: '#f0a477', eye: '#263a2d' }
+        : { body: '#fffaf0', detail: '#fffaf0', inner: '#eb9b8e', eye: '#353d32' };
+    let animalParts;
+
+    if (animal === 'fish') {
+      animalParts = [
+        h('path', { key: 'tail', className: 'fish-tail', d: 'M30 50 L14 37 Q17 50 14 63 Z', fill: palette.detail }),
+        h('path', { key: 'top-fin', d: 'M43 37 Q50 25 61 36 Z', fill: palette.inner }),
+        h('path', { key: 'bottom-fin', d: 'M46 63 Q54 74 64 63 Z', fill: palette.inner }),
+        h('ellipse', { key: 'body', cx: 49, cy: 50, rx: 27, ry: 18, fill: palette.body }),
+        h('path', { key: 'side-fin', d: 'M44 50 Q54 43 58 51 Q53 58 44 50 Z', fill: palette.detail, opacity: 0.85 }),
+        h('circle', { key: 'eye', cx: 65, cy: 46, r: 2.2, fill: palette.eye }),
+        h('circle', { key: 'shine', cx: 65.7, cy: 45.4, r: 0.7, fill: '#fff' }),
+        h('path', { key: 'smile', d: 'M68 54 Q71 56 73 53', fill: 'none', stroke: palette.detail, strokeWidth: 1.3, strokeLinecap: 'round' })
+      ];
+    } else if (animal === 'bird') {
+      animalParts = [
+        h('path', { key: 'tail', d: 'M31 62 Q18 61 19 72 Q28 70 35 68', fill: palette.detail }),
+        h('ellipse', { key: 'body', cx: 51, cy: 55, rx: 23, ry: 21, fill: palette.body }),
+        h('ellipse', { key: 'wing', className: 'animal-wing', cx: 43, cy: 59, rx: 12, ry: 8, fill: palette.detail }),
+        h('path', { key: 'beak', d: 'M68 50 L83 56 L68 62 Z', fill: palette.inner }),
+        h('ellipse', { key: 'eye', cx: 59, cy: 49, rx: 2, ry: 3, fill: palette.eye }),
+        h('path', { key: 'cheek', d: 'M61 60 Q65 62 68 59', fill: 'none', stroke: '#c98256', strokeWidth: 1.5, strokeLinecap: 'round' })
+      ];
+    } else {
+      animalParts = [
+        h('ellipse', { key: 'left-ear', className: 'animal-ear animal-ear-left', cx: 39, cy: 31, rx: 9, ry: 23, fill: palette.body }),
+        h('ellipse', { key: 'right-ear', className: 'animal-ear animal-ear-right', cx: 61, cy: 31, rx: 9, ry: 23, fill: palette.body }),
+        h('ellipse', { key: 'left-ear-inner', className: 'animal-ear animal-ear-left', cx: 39, cy: 31, rx: 4, ry: 16, fill: palette.inner }),
+        h('ellipse', { key: 'right-ear-inner', className: 'animal-ear animal-ear-right', cx: 61, cy: 31, rx: 4, ry: 16, fill: palette.inner }),
+        h('ellipse', { key: 'head', cx: 50, cy: 58, rx: 24, ry: 21, fill: palette.body }),
+        h('ellipse', { key: 'left-eye', cx: 42, cy: 55, rx: 1.8, ry: 2.8, fill: palette.eye }),
+        h('ellipse', { key: 'right-eye', cx: 58, cy: 55, rx: 1.8, ry: 2.8, fill: palette.eye }),
+        h('path', { key: 'nose', d: 'M47 61 Q50 64 53 61', fill: 'none', stroke: palette.inner, strokeWidth: 2, strokeLinecap: 'round' }),
+        h('ellipse', { key: 'cheek-left', cx: 36, cy: 61, rx: 4, ry: 2, fill: '#f2b8a7', opacity: 0.65 }),
+        h('ellipse', { key: 'cheek-right', cx: 64, cy: 61, rx: 4, ry: 2, fill: '#f2b8a7', opacity: 0.65 })
+      ];
+    }
+
+    return h('div', { className: `pet-sticker ${className}`, 'aria-hidden': 'true' },
+      h('svg', {
+        className: 'pet-svg',
+        viewBox: '0 0 100 100',
+        role: 'presentation',
+        focusable: 'false',
+        'data-animal': animal
+      },
+      animal === 'fish' && h('g', { className: 'fish-bubbles' },
+        h('circle', { className: 'fish-bubble fish-bubble-one', cx: 132, cy: 38, r: 3.4 }),
+        h('circle', { className: 'fish-bubble fish-bubble-two', cx: 145, cy: 49, r: 2.7 }),
+        h('circle', { className: 'fish-bubble fish-bubble-three', cx: 137, cy: 62, r: 3 }),
+        h('circle', { className: 'fish-bubble fish-bubble-four', cx: 151, cy: 70, r: 2.2 })
+      ),
+      h('ellipse', { className: 'animal-shadow', cx: 50, cy: 82, rx: 20, ry: 3.5, fill: 'rgba(53, 61, 50, 0.12)' }),
+      h('g', { className: 'animal-bob' }, animalParts),
+      )
+    );
+  }
+
   async function apiRequest(path, options = {}) {
     const response = await fetch(path, {
       ...options,
@@ -697,6 +760,114 @@
     const [error, setError] = useState('');
 
     useEffect(() => {
+      const floatingUI = window.FloatingUIDOM;
+      if (!floatingUI) return undefined;
+
+      const tooltip = document.createElement('div');
+      tooltip.id = 'floating-ui-tooltip';
+      tooltip.className = 'floating-tooltip';
+      tooltip.setAttribute('role', 'tooltip');
+      tooltip.hidden = true;
+      document.body.append(tooltip);
+
+      let activeTarget = null;
+      let stopAutoUpdate = null;
+
+      function hideTooltip() {
+        stopAutoUpdate?.();
+        stopAutoUpdate = null;
+        if (activeTarget) {
+          const describedBy = (activeTarget.getAttribute('aria-describedby') || '')
+            .split(/\s+/)
+            .filter((id) => id && id !== tooltip.id);
+          if (describedBy.length) activeTarget.setAttribute('aria-describedby', describedBy.join(' '));
+          else activeTarget.removeAttribute('aria-describedby');
+        }
+        activeTarget = null;
+        tooltip.classList.remove('is-visible');
+        tooltip.hidden = true;
+      }
+
+      function showTooltip(target) {
+        if (target === activeTarget) return;
+        hideTooltip();
+        const label = target.dataset.floatingTooltip;
+        if (!label) return;
+
+        activeTarget = target;
+        tooltip.textContent = label;
+        tooltip.hidden = false;
+        tooltip.style.visibility = 'hidden';
+        const describedBy = new Set(
+          (target.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean)
+        );
+        describedBy.add(tooltip.id);
+        target.setAttribute('aria-describedby', [...describedBy].join(' '));
+
+        stopAutoUpdate = floatingUI.autoUpdate(target, tooltip, () => {
+          floatingUI.computePosition(target, tooltip, {
+            placement: 'top',
+            strategy: 'fixed',
+            middleware: [
+              floatingUI.offset(8),
+              floatingUI.flip(),
+              floatingUI.shift({ padding: 8 })
+            ]
+          }).then(({ x, y, placement }) => {
+            if (activeTarget !== target) return;
+            Object.assign(tooltip.style, { left: `${x}px`, top: `${y}px`, visibility: 'visible' });
+            tooltip.dataset.placement = placement;
+            tooltip.classList.add('is-visible');
+          }).catch((positionError) => {
+            if (activeTarget !== target) return;
+            console.error('Không thể định vị chú giải.', positionError);
+            hideTooltip();
+          });
+        });
+      }
+
+      function findTooltipTarget(event) {
+        return event.target instanceof Element
+          ? event.target.closest('[data-floating-tooltip]')
+          : null;
+      }
+
+      function handlePointerOver(event) {
+        const target = findTooltipTarget(event);
+        if (target) showTooltip(target);
+      }
+
+      function handlePointerOut(event) {
+        const target = findTooltipTarget(event);
+        if (target && target === activeTarget && !target.contains(event.relatedTarget)) hideTooltip();
+      }
+
+      function handleFocusIn(event) {
+        const target = findTooltipTarget(event);
+        if (target) showTooltip(target);
+      }
+
+      function handleFocusOut(event) {
+        const target = findTooltipTarget(event);
+        if (target && target === activeTarget && !target.contains(event.relatedTarget)) hideTooltip();
+      }
+
+      document.addEventListener('pointerover', handlePointerOver);
+      document.addEventListener('pointerout', handlePointerOut);
+      document.addEventListener('focusin', handleFocusIn);
+      document.addEventListener('focusout', handleFocusOut);
+
+      return () => {
+        hideTooltip();
+        tooltip.remove();
+        document.removeEventListener('pointerover', handlePointerOver);
+        document.removeEventListener('pointerout', handlePointerOut);
+        document.removeEventListener('focusin', handleFocusIn);
+        document.removeEventListener('focusout', handleFocusOut);
+      };
+    }, []);
+
+    useEffect(() => {
       let active = true;
       apiRequest('/api/auth/session')
         .then((session) => {
@@ -742,6 +913,97 @@
     const completeCount = monthTasks.filter((task) => task.done).length;
     const pendingCount = monthTasks.length - completeCount;
     const selectedTasks = tasksByDate[activeDate] || [];
+
+    useEffect(() => {
+      if (!window.gsap || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+
+      const stickers = Array.from(document.querySelectorAll('.pet-svg[data-animal]'));
+      const context = window.gsap.context(() => {
+        stickers.forEach((sticker) => {
+          const animal = sticker.dataset.animal;
+          if (animal === 'fish') {
+            window.gsap.to(sticker.querySelector('.fish-tail'), {
+              rotation: 17,
+              transformOrigin: '100% 50%',
+              duration: 0.32,
+              repeat: -1,
+              yoyo: true,
+              ease: 'sine.inOut'
+            });
+            sticker.querySelectorAll('.fish-bubble').forEach((bubble, index) => {
+              window.gsap.fromTo(bubble,
+                { x: 0, y: 2, opacity: 0, scale: 0.65 },
+                {
+                  x: -145,
+                  y: -4,
+                  scale: 1,
+                  keyframes: [
+                    { opacity: 0, duration: 0 },
+                    { opacity: 0.75, duration: 0.3 },
+                    { opacity: 0.75, duration: 3 },
+                    { opacity: 0, duration: 0.9 }
+                  ],
+                  duration: 4.2,
+                  delay: index * 0.9,
+                  repeat: -1,
+                  ease: 'none'
+                }
+              );
+            });
+          } else {
+            window.gsap.to(sticker.querySelector('.animal-bob'), {
+              y: -4,
+              duration: 1.15,
+              ease: 'sine.inOut',
+              repeat: -1,
+              yoyo: true
+            });
+            window.gsap.to(sticker.querySelector('.animal-shadow'), {
+              scaleX: 0.78,
+              transformOrigin: 'center center',
+              duration: 1.15,
+              ease: 'sine.inOut',
+              repeat: -1,
+              yoyo: true
+            });
+            if (animal === 'bunny') {
+              window.gsap.to(sticker.querySelector('.animal-ear-left'), {
+                rotation: -7,
+                transformOrigin: '50% 100%',
+                duration: 0.75,
+                repeat: -1,
+                yoyo: true,
+                ease: 'sine.inOut'
+              });
+              window.gsap.to(sticker.querySelector('.animal-ear-right'), {
+                rotation: 6,
+                transformOrigin: '50% 100%',
+                duration: 0.85,
+                repeat: -1,
+                yoyo: true,
+                ease: 'sine.inOut',
+                delay: 0.12
+              });
+            } else if (animal === 'bird') {
+              window.gsap.to(sticker.querySelector('.animal-wing'), {
+                rotation: -18,
+                transformOrigin: '70% 30%',
+                duration: 0.3,
+                repeat: -1,
+                yoyo: true,
+                ease: 'sine.inOut'
+              });
+            }
+          }
+          sticker.dataset.gsapReady = 'true';
+        });
+      });
+
+      return () => {
+        context.revert();
+        stickers.forEach((sticker) => delete sticker.dataset.gsapReady);
+      };
+    }, []);
 
     const calendarDays = useMemo(() => {
       const offset = (new Date(year, month, 1).getDay() + 6) % 7;
@@ -894,7 +1156,8 @@
               h('span', { className: 'progress-copy' },
                 h('strong', null, `việc đã hoàn thành · ${pendingCount} việc đang chờ`),
                 h('span', null, 'Mỗi việc hoàn thành là một bước tiến nhỏ.')
-              )
+              ),
+              h(AnimalSticker, { animal: 'bunny', className: 'pet-progress' })
             )
           ),
           h('aside', { className: 'clock-panel', 'aria-label': 'Ngày hôm nay' },
@@ -912,7 +1175,8 @@
             h('div', { className: 'clock-lunar-date' },
               `Âm lịch: ${lunarDateLabel(todayLunarDate)}`
             ),
-            h('div', { className: 'clock-decoration', 'aria-hidden': 'true' })
+            h('div', { className: 'clock-decoration', 'aria-hidden': 'true' }),
+            h(AnimalSticker, { animal: 'bird', className: 'pet-clock' })
           )
         ),
         loadError && h('div', { className: 'banner', role: 'alert' },
@@ -924,6 +1188,12 @@
           }, 'Thử tải lại')
         ),
         h('main', { className: 'calendar-section', 'aria-label': 'Lịch trình theo tháng' },
+          ['pet-fish-small', '', 'pet-fish-tiny', 'pet-fish-large', 'pet-fish-medium']
+            .map((sizeClass, index) => h(AnimalSticker, {
+              key: `fish-${index}`,
+              animal: 'fish',
+              className: `pet-fish pet-fish-${index + 1}${sizeClass ? ` ${sizeClass}` : ''}`
+            })),
           h('div', { className: 'calendar-toolbar' },
             h('div', { className: 'month-heading' },
               h('span', { className: 'section-kicker' }, 'KẾ HOẠCH CỦA BẠN'),
@@ -934,20 +1204,23 @@
                 type: 'button',
                 className: 'btn btn-today',
                 onClick: goToToday,
-                'aria-label': 'Về tháng hiện tại'
+                'aria-label': 'Về tháng hiện tại',
+                'data-floating-tooltip': 'Quay về lịch tháng hiện tại'
               }, 'Hôm nay'),
               h('div', { className: 'month-arrows' },
                 h('button', {
                   type: 'button',
                   className: 'icon-button',
                   onClick: () => changeMonth(-1),
-                  'aria-label': 'Tháng trước'
+                  'aria-label': 'Tháng trước',
+                  'data-floating-tooltip': 'Xem tháng trước'
                 }, '‹'),
                 h('button', {
                   type: 'button',
                   className: 'icon-button',
                   onClick: () => changeMonth(1),
-                  'aria-label': 'Tháng sau'
+                  'aria-label': 'Tháng sau',
+                  'data-floating-tooltip': 'Xem tháng sau'
                 }, '›')
               )
             )
