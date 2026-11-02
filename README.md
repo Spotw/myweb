@@ -36,7 +36,7 @@ Tài khoản `duyvu@pvdv` được phép tạo tài khoản đăng nhập trong 
 
 ## Cơ sở dữ liệu và triển khai
 
-Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo các bảng cần thiết (bao gồm lưu hồ sơ tài khoản, thông tin xác thực khi đổi mật khẩu và thùng rác của cổng thông tin):
+Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo các bảng cần thiết (bao gồm lưu hồ sơ tài khoản, thông tin xác thực khi đổi mật khẩu, thùng rác và metadata tệp đính kèm của cổng thông tin):
 
 ```powershell
 npm run db:migrate:remote

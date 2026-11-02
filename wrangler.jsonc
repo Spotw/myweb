@@ -31,6 +31,13 @@
     }
   ],
 
+  "r2_buckets": [
+    {
+      "binding": "ENTRY_FILES",
+      "bucket_name": "databasedv"
+    }
+  ],
+
   // Bật log để xem lỗi trong dashboard (tùy chọn)
   "observability": {
     "enabled": true

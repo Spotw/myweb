@@ -20,6 +20,11 @@
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
   const pad = (value) => String(value).padStart(2, '0');
   const dateKey = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`;
+  const formatFileSize = (bytes) => bytes < 1000
+    ? `${bytes} B`
+    : bytes >= 1000 * 1000
+    ? `${(bytes / (1000 * 1000)).toFixed(1)} MB`
+    : `${Math.ceil(bytes / 1000)} KB`;
   const dateAfterYears = (date, years) => {
     const [year, month, day] = date.split('-').map(Number);
     const targetYear = year + years;
@@ -289,7 +294,12 @@
   function EntriesPortal() {
     const [entries, setEntries] = useState([]);
     const [trashEntries, setTrashEntries] = useState([]);
+    const [uploadQuota, setUploadQuota] = useState(null);
     const [form, setForm] = useState({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [removeExistingFile, setRemoveExistingFile] = useState(false);
+    const [editingEntry, setEditingEntry] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState('Tất cả');
     const [view, setView] = useState('entries');
@@ -298,16 +308,19 @@
     const [deleting, setDeleting] = useState(null);
     const [restoring, setRestoring] = useState(null);
     const [notice, setNotice] = useState(null);
+    const fileInput = useRef(null);
 
     async function loadEntries() {
       setLoading(true);
       try {
-        const [allEntries, deletedEntries] = await Promise.all([
+        const [allEntries, deletedEntries, quota] = await Promise.all([
           apiRequest('/api/entries'),
-          apiRequest('/api/entries/trash')
+          apiRequest('/api/entries/trash'),
+          apiRequest('/api/entries/upload-quota')
         ]);
         setEntries(allEntries);
         setTrashEntries(deletedEntries);
+        setUploadQuota(quota);
       } catch (loadError) {
         setNotice({ type: 'error', text: loadError.message });
       } finally {
@@ -322,27 +335,124 @@
     const filteredEntries = entries.filter((entry) => {
       const matchesCategory = category === 'Tất cả' || entry.loai_thong_tin === category;
       const matchesQuery = !normalizedQuery ||
-        `${entry.mo_ta} ${entry.loai_thong_tin} ${entry.noi_dung}`
+        `${entry.mo_ta} ${entry.loai_thong_tin} ${entry.noi_dung} ${entry.file_name || ''}`
           .toLocaleLowerCase('vi').includes(normalizedQuery);
       return matchesCategory && matchesQuery;
     });
+
+    function clearEntryForm() {
+      setForm({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
+      setSelectedFile(null);
+      setRemoveExistingFile(false);
+      setEditingEntry(null);
+      setUploadProgress(0);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+
+    function editEntry(entry) {
+      setEditingEntry(entry);
+      setForm({
+        mo_ta: entry.mo_ta,
+        loai_thong_tin: entry.loai_thong_tin,
+        noi_dung: entry.noi_dung || ''
+      });
+      setSelectedFile(null);
+      setRemoveExistingFile(false);
+      setNotice(null);
+      document.getElementById('portal-form-title')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
 
     async function saveEntry(event) {
       event.preventDefault();
       setSaving(true);
       setNotice(null);
+      let uploadToken = null;
       try {
-        await apiRequest('/api/entries', {
-          method: 'POST',
-          body: JSON.stringify(form)
+        const entryFields = {
+          ...form
+        };
+        if (selectedFile) {
+          const upload = await apiRequest('/api/entries/uploads', {
+            method: 'POST',
+            body: JSON.stringify({
+              ...entryFields,
+              entry_id: editingEntry?.id ?? null,
+              file_name: selectedFile.name,
+              file_size: selectedFile.size,
+              file_content_type: selectedFile.type
+            })
+          });
+          uploadToken = upload.token;
+          setUploadQuota(upload.quota);
+          const partCount = Math.ceil(selectedFile.size / upload.part_size);
+          for (let partIndex = 0; partIndex < partCount; partIndex += 1) {
+            const start = partIndex * upload.part_size;
+            const end = Math.min(start + upload.part_size, selectedFile.size);
+            const response = await fetch(
+              `/api/entries/uploads/${uploadToken}/parts/${partIndex + 1}`,
+              {
+                method: 'PUT',
+                body: selectedFile.slice(start, end),
+                cache: 'no-store'
+              }
+            );
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(result.error || `Không tải được phần tệp (HTTP ${response.status}).`);
+            }
+            setUploadProgress(Math.round((end / selectedFile.size) * 100));
+          }
+          const completed = await apiRequest(
+            `/api/entries/uploads/${uploadToken}/complete`,
+            { method: 'POST', body: JSON.stringify({}) }
+          );
+          setUploadQuota(completed.quota);
+          uploadToken = null;
+        } else {
+          const body = {
+            ...entryFields,
+            ...(editingEntry
+              ? {
+                keep_file: Boolean(editingEntry.file_name) && !removeExistingFile,
+                ...(removeExistingFile ? { remove_file: true } : {})
+              }
+              : {})
+          };
+          await apiRequest(
+            editingEntry ? `/api/entries/${editingEntry.id}` : '/api/entries',
+            {
+              method: editingEntry ? 'PUT' : 'POST',
+              body: JSON.stringify(body)
+            }
+          );
+        }
+        clearEntryForm();
+        setNotice({
+          type: 'success',
+          text: editingEntry
+            ? 'Đã cập nhật thông tin trong cổng thông tin dùng chung.'
+            : 'Đã lưu thông tin vào cổng thông tin dùng chung.'
         });
-        setForm({ mo_ta: '', loai_thong_tin: '', noi_dung: '' });
-        setNotice({ type: 'success', text: 'Đã lưu thông tin vào cổng thông tin dùng chung.' });
         await loadEntries();
       } catch (saveError) {
+        if (uploadToken) {
+          try {
+            const response = await fetch(`/api/entries/uploads/${uploadToken}`, {
+              method: 'DELETE',
+              cache: 'no-store'
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          } catch (abortError) {
+            console.error('Không thể hủy phiên tải tệp; phiên sẽ được dọn tự động.', abortError);
+          }
+        }
         setNotice({ type: 'error', text: saveError.message });
       } finally {
         setSaving(false);
+        setUploadProgress(0);
       }
     }
 
@@ -464,20 +574,37 @@
                       ),
                       h('h3', null, entry.mo_ta),
                       entry.noi_dung && h('p', null, entry.noi_dung),
-                      view !== 'trash' && h('button', {
-                            className: 'portal-delete',
-                            type: 'button',
-                            onClick: () => deleteEntry(entry.id),
-                            disabled: deleting === entry.id,
-                            'aria-label': `Xóa ${entry.mo_ta}`
-                          }, deleting === entry.id ? 'Đang xóa...' : 'Xóa')
+                      entry.file_name && h('p', { className: 'portal-entry-file' },
+                        h('a', {
+                          href: `/api/entries/${entry.id}/file`,
+                          download: entry.file_name
+                        }, `Tải tệp: ${entry.file_name}`),
+                        h('span', null, ` · ${formatFileSize(entry.file_size || 0)}`)
+                      ),
+                      view !== 'trash' && h('div', { className: 'portal-entry-actions' },
+                        h('button', {
+                          className: 'portal-edit',
+                          type: 'button',
+                          onClick: () => editEntry(entry),
+                          disabled: saving || loading
+                        }, 'Sửa'),
+                        h('button', {
+                          className: 'portal-delete',
+                          type: 'button',
+                          onClick: () => deleteEntry(entry.id),
+                          disabled: deleting === entry.id,
+                          'aria-label': `Xóa ${entry.mo_ta}`
+                        }, deleting === entry.id ? 'Đang xóa...' : 'Xóa')
+                      ),
                     ))
                   )
           ),
           h('aside', { className: 'portal-panel portal-form-panel' },
             h('span', { className: 'section-kicker' }, 'ĐÓNG GÓP THÔNG TIN'),
-            h('h2', null, 'Thêm thông tin'),
-            h('p', { className: 'portal-form-description' }, 'Nội dung sẽ được chia sẻ với mọi tài khoản đã đăng nhập.'),
+            h('h2', { id: 'portal-form-title' }, editingEntry ? 'Chỉnh sửa thông tin' : 'Thêm thông tin'),
+            h('p', { className: 'portal-form-description' },
+              'Nội dung sẽ được chia sẻ với mọi tài khoản đã đăng nhập.'
+            ),
             h('form', { className: 'portal-form', onSubmit: saveEntry },
               h('label', { htmlFor: 'entry-category' }, 'Loại thông tin'),
               h('input', {
@@ -495,16 +622,101 @@
                 maxLength: 300,
                 required: true
               }),
-              h('label', { htmlFor: 'entry-content' }, 'Nội dung chi tiết'),
+              h('div', { className: 'portal-content-heading' },
+                h('label', { htmlFor: 'entry-content' }, 'Nội dung chi tiết'),
+                h('button', {
+                  className: 'portal-upload-button',
+                  type: 'button',
+                  onClick: () => fileInput.current?.click(),
+                  disabled: saving
+                }, 'Tải lên'),
+                h('input', {
+                  ref: fileInput,
+                  className: 'portal-file-input',
+                  id: 'entry-file',
+                  type: 'file',
+                  onChange: (event) => {
+                    setSelectedFile(event.target.files?.[0] || null);
+                    setRemoveExistingFile(false);
+                  },
+                  disabled: saving,
+                  tabIndex: -1,
+                  'aria-label': 'Chọn tệp tải lên'
+                })
+              ),
               h('textarea', {
                 id: 'entry-content',
                 value: form.noi_dung,
-                onChange: (event) => setForm((current) => ({ ...current, noi_dung: event.target.value })),
+                onChange: (event) => setForm((current) => ({
+                  ...current,
+                  noi_dung: event.target.value
+                })),
                 maxLength: 10000,
-                rows: 6
+                rows: 6,
+                disabled: saving
               }),
-              h('button', { className: 'btn btn-save portal-submit', type: 'submit', disabled: saving || loading },
-                saving ? 'Đang lưu...' : 'Lưu thông tin'
+              editingEntry?.file_name && !removeExistingFile && h('div', {
+                className: 'portal-current-file'
+              },
+                h('span', null, 'Tệp hiện tại: '),
+                h('a', {
+                  href: `/api/entries/${editingEntry.id}/file`,
+                  download: editingEntry.file_name
+                }, editingEntry.file_name),
+                h('button', {
+                  type: 'button',
+                  onClick: () => {
+                    setRemoveExistingFile(true);
+                    setSelectedFile(null);
+                    if (fileInput.current) fileInput.current.value = '';
+                  },
+                  disabled: saving
+                }, 'Gỡ tệp')
+              ),
+              removeExistingFile && h('p', { className: 'portal-file-selection' },
+                'Tệp hiện tại sẽ được gỡ khi lưu.'
+              ),
+              selectedFile && h('div', { className: 'portal-selected-file' },
+                h('span', null, `${selectedFile.name} · ${formatFileSize(selectedFile.size)}`),
+                h('button', {
+                  type: 'button',
+                  onClick: () => {
+                    setSelectedFile(null);
+                    if (fileInput.current) fileInput.current.value = '';
+                  },
+                  disabled: saving,
+                  'aria-label': 'Bỏ tệp đã chọn'
+                }, 'Bỏ tệp')
+              ),
+              h('p', {
+                className: 'portal-quota-note'
+              },
+              uploadQuota
+                ? `${formatFileSize(uploadQuota.used_bytes)} đã dùng, ${formatFileSize(uploadQuota.reserved_bytes)} đang tải trong năm ${uploadQuota.year}; còn ${formatFileSize(Math.max(0, uploadQuota.limit_bytes - uploadQuota.used_bytes - uploadQuota.reserved_bytes))} / 500 MB.`
+                : 'Mỗi tài khoản có hạn mức 500 MB tệp tải lên mỗi năm.'),
+              saving && selectedFile && h('progress', {
+                className: 'portal-upload-progress',
+                max: 100,
+                value: uploadProgress
+              }, `${uploadProgress}%`),
+              saving && selectedFile &&
+                h('span', { className: 'portal-upload-progress-label' }, `${uploadProgress}%`),
+              h('div', {
+                className: `portal-form-actions${editingEntry ? ' editing' : ''}`
+              },
+                editingEntry && h('button', {
+                  className: 'btn btn-cancel',
+                  type: 'button',
+                  onClick: clearEntryForm,
+                  disabled: saving
+                }, 'Hủy bỏ'),
+                h('button', {
+                  className: 'btn btn-save portal-submit',
+                  type: 'submit',
+                  disabled: saving || loading
+                }, saving
+                  ? selectedFile ? `Đang tải tệp ${uploadProgress}%...` : 'Đang lưu...'
+                  : editingEntry ? 'Lưu thay đổi' : 'Lưu thông tin')
               )
             )
           )

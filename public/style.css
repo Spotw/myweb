@@ -1792,7 +1792,7 @@ button {
 
 .portal-entry {
   position: relative;
-  padding: 14px 42px 14px 14px;
+  padding: 14px 105px 14px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
@@ -1839,18 +1839,35 @@ button {
   overflow-wrap: anywhere;
 }
 
+.portal-entry-actions {
+  position: absolute;
+  top: 10px;
+  right: 9px;
+  display: flex;
+  gap: 4px;
+}
+
+.portal-edit,
 .portal-delete,
 .portal-restore {
-  position: absolute;
-  top: 12px;
-  right: 11px;
   padding: 5px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--danger);
   font-size: 10px;
   cursor: pointer;
+}
+
+.portal-edit {
+  color: var(--green-dark);
+}
+
+.portal-edit:hover {
+  background: var(--green-soft);
+}
+
+.portal-delete {
+  color: var(--danger);
 }
 
 .portal-delete:hover {
@@ -1893,6 +1910,123 @@ button {
 .portal-form textarea {
   min-height: 120px;
   resize: vertical;
+}
+
+.portal-content-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+}
+
+.portal-content-heading label {
+  margin: 0;
+}
+
+.portal-upload-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #d5e0d1;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.portal-upload-button:hover:not(:disabled) {
+  background: #dfeadd;
+}
+
+.portal-upload-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.portal-form input.portal-file-input {
+  position: absolute;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.portal-current-file,
+.portal-selected-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.portal-current-file button,
+.portal-selected-file button {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #f2f4ef;
+  color: var(--green-dark);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.portal-quota-note,
+.portal-upload-progress-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.portal-file-selection {
+  color: var(--green-dark) !important;
+}
+
+.portal-upload-progress {
+  width: 100%;
+  height: 9px;
+  accent-color: var(--green);
+}
+
+.portal-entry-file a,
+.portal-current-file a {
+  color: var(--green-dark);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.portal-entry-file {
+  padding-right: 4px;
+}
+
+.portal-form-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.portal-form-actions.editing {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-form-actions .portal-submit,
+.portal-form-actions .btn-cancel {
+  margin-top: 13px;
 }
 
 @media (max-width: 800px) {
@@ -1982,6 +2116,15 @@ button {
   .portal-entry-meta {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .portal-entry {
+    padding-right: 95px;
+  }
+
+  .portal-entry-actions {
+    top: 10px;
+    right: 7px;
   }
 
   .login-card {

@@ -17,6 +17,8 @@ const PROFILE_LIMITS = {
   workplace: 200
 };
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
+const ENTRY_UPLOAD_QUOTA_BYTES = 500 * 1000 * 1000;
+const ENTRY_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 const encoder = new TextEncoder();
 
 const json = (data, status = 200, headers = {}) =>
@@ -843,11 +845,409 @@ async function handleSchedule(request, db, username, pathname, url) {
   return null;
 }
 
-async function handleEntries(request, db, pathname) {
+const cleanEntryFileName = (value) => value
+  .replace(/[\u0000-\u001f\u007f/\\]/g, '_')
+  .trim()
+  .slice(0, 255);
+
+function parseEntryFields(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+
+  const entry = {};
+  for (const [field, limit] of Object.entries(ENTRY_LIMITS)) {
+    const value = body[field] ?? '';
+    if (typeof value !== 'string') return null;
+    entry[field] = value.trim();
+    if (entry[field].length > limit) return null;
+  }
+  if (!entry.mo_ta || !entry.loai_thong_tin) return null;
+  return entry;
+}
+
+async function getEntryUploadQuota(db, username, year) {
+  const quota = await db.prepare(
+    `SELECT used_bytes, reserved_bytes FROM entry_upload_quota
+     WHERE username = ? AND usage_year = ?`
+  ).bind(username, year).first();
+  return {
+    year,
+    limit_bytes: ENTRY_UPLOAD_QUOTA_BYTES,
+    used_bytes: quota?.used_bytes || 0,
+    reserved_bytes: quota?.reserved_bytes || 0
+  };
+}
+
+async function releaseEntryUpload(db, bucket, upload, removeObject = false) {
+  if (bucket) {
+    if (removeObject && await bucket.head(upload.object_key)) {
+      await bucket.delete(upload.object_key);
+    } else if (upload.multipart_upload_id) {
+      await bucket.resumeMultipartUpload(
+        upload.object_key,
+        upload.multipart_upload_id
+      ).abort();
+    }
+  }
+  await db.batch([
+    db.prepare(
+      `UPDATE entry_upload_quota SET reserved_bytes = MAX(0, reserved_bytes - ?)
+       WHERE username = ? AND usage_year = ?`
+    ).bind(upload.file_size, upload.username, upload.usage_year),
+    db.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(upload.token),
+    db.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(upload.token)
+  ]);
+}
+
+async function handleEntries(request, db, bucket, username, pathname) {
+  if (pathname === '/api/entries/upload-quota') {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+    return json(await getEntryUploadQuota(db, username, new Date().getUTCFullYear()));
+  }
+
+  if (pathname === '/api/entries/uploads') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (!bucket) return json({ error: 'Kho lưu tệp R2 chưa được cấu hình.' }, 503);
+
+    const body = await readJson(request);
+    const entry = parseEntryFields(body);
+    const fileName = typeof body?.file_name === 'string' ? cleanEntryFileName(body.file_name) : '';
+    const contentType = typeof body?.file_content_type === 'string' &&
+      /^[\w.+-]+\/[\w.+-]+$/.test(body.file_content_type)
+      ? body.file_content_type
+      : 'application/octet-stream';
+    const fileSize = body?.file_size;
+    const entryId = body?.entry_id ?? null;
+    if (!entry) {
+      return json({ error: 'Vui lòng nhập mô tả, loại thông tin và nội dung hợp lệ.' }, 400);
+    }
+    if (!fileName || !Number.isSafeInteger(fileSize) || fileSize < 1 ||
+      fileSize > ENTRY_UPLOAD_QUOTA_BYTES) {
+      return json({ error: 'Tệp không hợp lệ hoặc vượt quá 500 MB.' }, 400);
+    }
+    if (entryId !== null && (!Number.isSafeInteger(entryId) || entryId < 1)) {
+      return json({ error: 'Mã thông tin không hợp lệ.' }, 400);
+    }
+    if (entryId !== null) {
+      const currentEntry = await db.prepare(
+        'SELECT id FROM entries WHERE id = ? AND deleted_at IS NULL'
+      ).bind(entryId).first();
+      if (!currentEntry) return json({ error: 'Thông tin này không còn tồn tại.' }, 404);
+    }
+
+    const year = new Date().getUTCFullYear();
+    const reservation = await db.batch([
+      db.prepare(
+        `INSERT OR IGNORE INTO entry_upload_quota
+         (username, usage_year, used_bytes, reserved_bytes) VALUES (?, ?, 0, 0)`
+      ).bind(username, year),
+      db.prepare(
+        `UPDATE entry_upload_quota
+         SET reserved_bytes = reserved_bytes + ?
+         WHERE username = ? AND usage_year = ?
+           AND used_bytes + reserved_bytes + ? <= ?`
+      ).bind(fileSize, username, year, fileSize, ENTRY_UPLOAD_QUOTA_BYTES)
+    ]);
+    if (!reservation[1].meta.changes) {
+      const quota = await getEntryUploadQuota(db, username, year);
+      return json({
+        error: 'Tài khoản đã hết hạn mức tải tệp 500 MB trong năm nay.',
+        quota
+      }, 413);
+    }
+
+    const token = crypto.randomUUID();
+    const objectKey = `portal/${token}`;
+    let multipartUpload;
+    try {
+      multipartUpload = await bucket.createMultipartUpload(objectKey, {
+        httpMetadata: { contentType }
+      });
+      await db.prepare(
+        `INSERT INTO entry_upload_sessions
+         (token, username, usage_year, object_key, multipart_upload_id, file_name,
+          file_content_type, file_size, entry_id, mo_ta, loai_thong_tin, noi_dung)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        token, username, year, objectKey, multipartUpload.uploadId, fileName,
+        contentType, fileSize, entryId, entry.mo_ta, entry.loai_thong_tin, entry.noi_dung
+      ).run();
+    } catch (error) {
+      if (multipartUpload) {
+        try {
+          await multipartUpload.abort();
+        } catch (abortError) {
+          console.error('Không thể hủy multipart upload sau lỗi khởi tạo.', abortError);
+        }
+      }
+      await db.prepare(
+        `UPDATE entry_upload_quota SET reserved_bytes = MAX(0, reserved_bytes - ?)
+         WHERE username = ? AND usage_year = ?`
+      ).bind(fileSize, username, year).run();
+      throw error;
+    }
+
+    return json({
+      token,
+      part_size: ENTRY_UPLOAD_PART_BYTES,
+      quota: await getEntryUploadQuota(db, username, year)
+    }, 201);
+  }
+
+  const uploadPartMatch = pathname.match(/^\/api\/entries\/uploads\/([0-9a-f-]+)\/parts\/(\d+)$/i);
+  if (uploadPartMatch) {
+    if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
+    const [, token, partNumberText] = uploadPartMatch;
+    const partNumber = Number(partNumberText);
+    const upload = await db.prepare(
+      `SELECT object_key, multipart_upload_id, file_size FROM entry_upload_sessions
+       WHERE token = ? AND username = ? AND state = 'uploading'`
+    ).bind(token, username).first();
+    if (!upload) return json({ error: 'Phiên tải tệp không còn tồn tại.' }, 404);
+    const partCount = Math.ceil(upload.file_size / ENTRY_UPLOAD_PART_BYTES);
+    if (!Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > partCount) {
+      return json({ error: 'Số phần tải lên không hợp lệ.' }, 400);
+    }
+    const expectedSize = Math.min(
+      ENTRY_UPLOAD_PART_BYTES,
+      upload.file_size - ((partNumber - 1) * ENTRY_UPLOAD_PART_BYTES)
+    );
+    if (request.headers.has('Content-Length') &&
+      Number(request.headers.get('Content-Length')) !== expectedSize) {
+      return json({ error: 'Kích thước phần tải lên không hợp lệ.' }, 400);
+    }
+    if (!request.body) return json({ error: 'Phần tải lên đang trống.' }, 400);
+    const reader = request.body.getReader();
+    const chunks = [];
+    let receivedSize = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedSize += value.byteLength;
+      if (receivedSize > expectedSize) {
+        await reader.cancel();
+        return json({ error: 'Kích thước phần tải lên không hợp lệ.' }, 400);
+      }
+      chunks.push(value);
+    }
+    if (receivedSize !== expectedSize) {
+      return json({ error: 'Kích thước phần tải lên không hợp lệ.' }, 400);
+    }
+    const partBody = new Uint8Array(expectedSize);
+    let chunkOffset = 0;
+    for (const chunk of chunks) {
+      partBody.set(chunk, chunkOffset);
+      chunkOffset += chunk.byteLength;
+    }
+
+    const multipartUpload = bucket.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id);
+    const uploadedPart = await multipartUpload.uploadPart(partNumber, partBody);
+    await db.prepare(
+      `INSERT INTO entry_upload_parts (token, part_number, etag) VALUES (?, ?, ?)
+       ON CONFLICT(token, part_number) DO UPDATE SET etag = excluded.etag`
+    ).bind(token, partNumber, uploadedPart.etag).run();
+    return json({ ok: true });
+  }
+
+  const completeUploadMatch = pathname.match(/^\/api\/entries\/uploads\/([0-9a-f-]+)\/complete$/i);
+  if (completeUploadMatch) {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (!bucket) return json({ error: 'Kho lưu tệp R2 chưa được cấu hình.' }, 503);
+    const [, token] = completeUploadMatch;
+    const upload = await db.prepare(
+      `SELECT * FROM entry_upload_sessions WHERE token = ? AND username = ?`
+    ).bind(token, username).first();
+    if (!upload) return json({ error: 'Phiên tải tệp không còn tồn tại.' }, 404);
+    const { results: uploadedParts } = await db.prepare(
+      `SELECT part_number, etag FROM entry_upload_parts
+       WHERE token = ? ORDER BY part_number`
+    ).bind(token).all();
+    const expectedParts = Math.ceil(upload.file_size / ENTRY_UPLOAD_PART_BYTES);
+    if (uploadedParts.length !== expectedParts ||
+      uploadedParts.some((part, index) => part.part_number !== index + 1)) {
+      return json({ error: 'Tệp chưa được tải lên đầy đủ.' }, 400);
+    }
+    if (upload.state === 'aborting') {
+      return json({ error: 'Phiên tải tệp đang được hủy.' }, 409);
+    }
+    if (upload.state === 'uploading') {
+      const claim = await db.prepare(
+        `UPDATE entry_upload_sessions SET state = 'completing'
+         WHERE token = ? AND username = ? AND state = 'uploading'`
+      ).bind(token, username).run();
+      if (!claim.meta.changes) {
+        const current = await db.prepare(
+          'SELECT state FROM entry_upload_sessions WHERE token = ? AND username = ?'
+        ).bind(token, username).first();
+        if (current?.state !== 'completing') {
+          return json({ error: 'Phiên tải tệp không còn sẵn sàng.' }, 409);
+        }
+      }
+    } else if (upload.state !== 'completing') {
+      return json({ error: 'Trạng thái phiên tải tệp không hợp lệ.' }, 409);
+    }
+
+    let object = await bucket.head(upload.object_key);
+    if (!object) {
+      const multipartUpload = bucket.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id);
+      object = await multipartUpload.complete(uploadedParts.map((part) => ({
+        partNumber: part.part_number,
+        etag: part.etag
+      })));
+    }
+    if (object.size !== upload.file_size) {
+      await releaseEntryUpload(db, bucket, upload, true);
+      return json({ error: 'Kích thước tệp tải lên không khớp.' }, 400);
+    }
+
+    const entry = {
+      mo_ta: upload.mo_ta,
+      loai_thong_tin: upload.loai_thong_tin
+    };
+    let previousFileKey = null;
+    if (upload.entry_id !== null) {
+      const currentEntry = await db.prepare(
+        'SELECT file_key FROM entries WHERE id = ? AND deleted_at IS NULL'
+      ).bind(upload.entry_id).first();
+      if (!currentEntry) {
+        await releaseEntryUpload(db, bucket, upload, true);
+        return json({ error: 'Thông tin này không còn tồn tại.' }, 404);
+      }
+      previousFileKey = currentEntry.file_key;
+    }
+
+    const statements = [
+      upload.entry_id === null
+        ? db.prepare(
+          `INSERT INTO entries
+           (mo_ta, loai_thong_tin, noi_dung, file_key, file_name, file_content_type, file_size)
+           SELECT ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM entry_upload_sessions
+             WHERE token = ? AND username = ? AND state = 'completing'
+           )`
+        ).bind(
+          entry.mo_ta, entry.loai_thong_tin, upload.noi_dung,
+          upload.object_key, upload.file_name,
+          upload.file_content_type, upload.file_size, token, username
+        )
+        : db.prepare(
+          `UPDATE entries SET mo_ta = ?, loai_thong_tin = ?, noi_dung = ?,
+           file_key = ?, file_name = ?, file_content_type = ?, file_size = ?
+           WHERE id = ? AND deleted_at IS NULL AND EXISTS (
+             SELECT 1 FROM entry_upload_sessions
+             WHERE token = ? AND username = ? AND state = 'completing'
+           )`
+        ).bind(
+          entry.mo_ta, entry.loai_thong_tin, upload.noi_dung,
+          upload.object_key, upload.file_name, upload.file_content_type,
+          upload.file_size, upload.entry_id, token, username
+        ),
+      db.prepare(
+        `UPDATE entry_upload_quota
+         SET used_bytes = used_bytes + ?, reserved_bytes = reserved_bytes - ?
+         WHERE username = ? AND usage_year = ? AND reserved_bytes >= ?
+           AND EXISTS (
+             SELECT 1 FROM entry_upload_sessions
+             WHERE token = ? AND username = ? AND state = 'completing'
+           )`
+      ).bind(
+        upload.file_size, upload.file_size, username, upload.usage_year,
+        upload.file_size, token, username
+      ),
+      db.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(token),
+      db.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(token)
+    ];
+    if (previousFileKey && previousFileKey !== upload.object_key) {
+      statements.push(db.prepare(
+        'INSERT OR IGNORE INTO entry_file_cleanup (object_key) VALUES (?)'
+      ).bind(previousFileKey));
+    }
+    const results = await db.batch(statements);
+    if (!results[1].meta.changes) {
+      throw new Error('Không thể chốt hạn mức tải tệp đã đặt trước.');
+    }
+    return json({
+      ok: true,
+      quota: await getEntryUploadQuota(db, username, upload.usage_year)
+    });
+  }
+
+  const abortUploadMatch = pathname.match(/^\/api\/entries\/uploads\/([0-9a-f-]+)$/i);
+  if (abortUploadMatch) {
+    if (request.method !== 'DELETE') return json({ error: 'Method not allowed' }, 405);
+    const [, token] = abortUploadMatch;
+    let upload = await db.prepare(
+      `SELECT * FROM entry_upload_sessions WHERE token = ? AND username = ?`
+    ).bind(token, username).first();
+    if (!upload) return json({ ok: true });
+    if (upload.state === 'completing') {
+      return json({ error: 'Tệp đang được hoàn tất, không thể hủy.' }, 409);
+    }
+    if (upload.state === 'uploading') {
+      const claim = await db.prepare(
+        `UPDATE entry_upload_sessions SET state = 'aborting'
+         WHERE token = ? AND username = ? AND state = 'uploading'`
+      ).bind(token, username).run();
+      if (!claim.meta.changes) {
+        upload = await db.prepare(
+          'SELECT * FROM entry_upload_sessions WHERE token = ? AND username = ?'
+        ).bind(token, username).first();
+        if (!upload || upload.state === 'aborting') return json({ ok: true });
+        return json({ error: 'Tệp đang được hoàn tất, không thể hủy.' }, 409);
+      }
+    } else if (upload.state !== 'aborting') {
+      return json({ error: 'Trạng thái phiên tải tệp không hợp lệ.' }, 409);
+    }
+    const object = bucket ? await bucket.head(upload.object_key) : null;
+    if (object) {
+      await bucket.delete(upload.object_key);
+    } else if (bucket) {
+      await bucket.resumeMultipartUpload(upload.object_key, upload.multipart_upload_id).abort();
+    }
+    await db.batch([
+      db.prepare(
+        `UPDATE entry_upload_quota SET reserved_bytes = MAX(0, reserved_bytes - ?)
+         WHERE username = ? AND usage_year = ?`
+      ).bind(upload.file_size, username, upload.usage_year),
+      db.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(token),
+      db.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(token)
+    ]);
+    return json({ ok: true });
+  }
+
+  const fileMatch = pathname.match(/^\/api\/entries\/(\d+)\/file$/);
+  if (fileMatch) {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+    if (!bucket) return json({ error: 'Kho lưu tệp R2 chưa được cấu hình.' }, 503);
+    const id = Number(fileMatch[1]);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      return json({ error: 'Mã thông tin không hợp lệ.' }, 400);
+    }
+    const entry = await db.prepare(
+      `SELECT file_key, file_name, file_content_type, file_size
+       FROM entries WHERE id = ? AND deleted_at IS NULL`
+    ).bind(id).first();
+    if (!entry?.file_key) return json({ error: 'Tệp đính kèm không còn tồn tại.' }, 404);
+    const object = await bucket.get(entry.file_key);
+    if (!object) return json({ error: 'Không tìm thấy tệp trong kho lưu trữ.' }, 404);
+    const encodedName = encodeURIComponent(entry.file_name).replace(/[!'()*]/g, (character) =>
+      `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+    );
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': entry.file_content_type || 'application/octet-stream',
+        'Content-Length': String(entry.file_size),
+        'Content-Disposition': `attachment; filename="download"; filename*=UTF-8''${encodedName}`,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store'
+      }
+    });
+  }
+
   if (pathname === '/api/entries/trash') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
     const { results } = await db.prepare(
-      `SELECT id, mo_ta, loai_thong_tin, noi_dung, created_at, deleted_at
+      `SELECT id, mo_ta, loai_thong_tin, noi_dung, file_name, file_size, created_at, deleted_at
        FROM entries WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC`
     ).all();
     return json(results);
@@ -856,33 +1256,17 @@ async function handleEntries(request, db, pathname) {
   if (pathname === '/api/entries') {
     if (request.method === 'GET') {
       const { results } = await db.prepare(
-        `SELECT id, mo_ta, loai_thong_tin, noi_dung, created_at
+        `SELECT id, mo_ta, loai_thong_tin, noi_dung, file_name, file_size, created_at
          FROM entries WHERE deleted_at IS NULL ORDER BY id DESC`
       ).all();
       return json(results);
     }
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-    const body = await readJson(request);
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return json({ error: 'Nội dung gửi lên không phải JSON hợp lệ.' }, 400);
+    const entry = parseEntryFields(await readJson(request));
+    if (!entry) {
+      return json({ error: 'Vui lòng nhập mô tả, loại thông tin và nội dung hợp lệ.' }, 400);
     }
-
-    const entry = {};
-    for (const [field, limit] of Object.entries(ENTRY_LIMITS)) {
-      const value = body[field] ?? '';
-      if (typeof value !== 'string') {
-        return json({ error: 'Các trường thông tin cần có định dạng văn bản.' }, 400);
-      }
-      entry[field] = value.trim();
-      if (entry[field].length > limit) {
-        return json({ error: `Trường "${field}" vượt quá giới hạn ký tự.` }, 400);
-      }
-    }
-    if (!entry.mo_ta || !entry.loai_thong_tin) {
-      return json({ error: 'Vui lòng nhập mô tả và loại thông tin.' }, 400);
-    }
-
     const result = await db.prepare(
       'INSERT INTO entries (mo_ta, loai_thong_tin, noi_dung) VALUES (?, ?, ?)'
     ).bind(entry.mo_ta, entry.loai_thong_tin, entry.noi_dung).run();
@@ -905,13 +1289,48 @@ async function handleEntries(request, db, pathname) {
     return json({ ok: true });
   }
 
-  const deleteMatch = pathname.match(/^\/api\/entries\/(\d+)$/);
-  if (deleteMatch) {
-    if (request.method !== 'DELETE') return json({ error: 'Method not allowed' }, 405);
-    const id = Number(deleteMatch[1]);
+  const entryMatch = pathname.match(/^\/api\/entries\/(\d+)$/);
+  if (entryMatch) {
+    const id = Number(entryMatch[1]);
     if (!Number.isSafeInteger(id) || id < 1) {
       return json({ error: 'Mã thông tin không hợp lệ.' }, 400);
     }
+    if (request.method === 'PUT') {
+      const body = await readJson(request);
+      const entry = parseEntryFields(body);
+      if (!entry) {
+        return json({ error: 'Vui lòng nhập mô tả, loại thông tin và nội dung hợp lệ.' }, 400);
+      }
+      const current = await db.prepare(
+        `SELECT file_key, file_name, file_content_type, file_size
+         FROM entries WHERE id = ? AND deleted_at IS NULL`
+      ).bind(id).first();
+      if (!current) return json({ error: 'Thông tin này không còn tồn tại.' }, 404);
+      const keepFile = body.keep_file === true && Boolean(current.file_key);
+      const statements = [db.prepare(
+        `UPDATE entries SET mo_ta = ?, loai_thong_tin = ?, noi_dung = ?,
+         file_key = ?, file_name = ?, file_content_type = ?, file_size = ?
+         WHERE id = ? AND deleted_at IS NULL`
+      ).bind(
+        entry.mo_ta,
+        entry.loai_thong_tin,
+        entry.noi_dung,
+        keepFile ? current.file_key : null,
+        keepFile ? current.file_name : null,
+        keepFile ? current.file_content_type : null,
+        keepFile ? current.file_size : null,
+        id
+      )];
+      if (current.file_key && !keepFile) {
+        statements.push(db.prepare(
+          'INSERT OR IGNORE INTO entry_file_cleanup (object_key) VALUES (?)'
+        ).bind(current.file_key));
+      }
+      const result = await db.batch(statements);
+      if (!result[0].meta.changes) return json({ error: 'Thông tin này không còn tồn tại.' }, 404);
+      return json({ ok: true });
+    }
+    if (request.method !== 'DELETE') return json({ error: 'Method not allowed' }, 405);
     const result = await db.prepare(
       "UPDATE entries SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL"
     ).bind(id).run();
@@ -959,9 +1378,54 @@ async function handleLegacyNotes(request, db, pathname) {
 
 export default {
   async scheduled(controller, env) {
-    await env.DB.prepare(
-      "DELETE FROM entries WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', '-30 days')"
-    ).run();
+    const { results: expiredEntries } = await env.DB.prepare(
+      `SELECT id, file_key FROM entries
+       WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', '-30 days')
+       ORDER BY id LIMIT 100`
+    ).all();
+    for (const entry of expiredEntries) {
+      if (entry.file_key) await env.ENTRY_FILES.delete(entry.file_key);
+    }
+    if (expiredEntries.length) {
+      await env.DB.batch(expiredEntries.map((entry) =>
+        env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entry.id)
+      ));
+    }
+
+    const { results: queuedFiles } = await env.DB.prepare(
+      'SELECT object_key FROM entry_file_cleanup ORDER BY queued_at LIMIT 100'
+    ).all();
+    for (const file of queuedFiles) {
+      await env.ENTRY_FILES.delete(file.object_key);
+      await env.DB.prepare(
+        'DELETE FROM entry_file_cleanup WHERE object_key = ?'
+      ).bind(file.object_key).run();
+    }
+
+    const { results: expiredUploads } = await env.DB.prepare(
+      `SELECT * FROM entry_upload_sessions
+       WHERE started_at <= datetime('now', '-1 day') ORDER BY started_at LIMIT 20`
+    ).all();
+    for (const upload of expiredUploads) {
+      const object = await env.ENTRY_FILES.head(upload.object_key);
+      if (object) {
+        await env.ENTRY_FILES.delete(upload.object_key);
+      } else {
+        await env.ENTRY_FILES.resumeMultipartUpload(
+          upload.object_key,
+          upload.multipart_upload_id
+        ).abort();
+      }
+      await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE entry_upload_quota
+           SET reserved_bytes = MAX(0, reserved_bytes - ?)
+           WHERE username = ? AND usage_year = ?`
+        ).bind(upload.file_size, upload.username, upload.usage_year),
+        env.DB.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(upload.token),
+        env.DB.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(upload.token)
+      ]);
+    }
   },
 
   async fetch(request, env) {
@@ -983,7 +1447,9 @@ export default {
       const scheduleResponse = await handleSchedule(request, env.DB, session.username, pathname, url);
       if (scheduleResponse) return scheduleResponse;
 
-      const entriesResponse = await handleEntries(request, env.DB, pathname);
+      const entriesResponse = await handleEntries(
+        request, env.DB, env.ENTRY_FILES, session.username, pathname
+      );
       if (entriesResponse) return entriesResponse;
 
       const notesResponse = await handleLegacyNotes(request, env.DB, pathname);
