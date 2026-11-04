@@ -50,3 +50,27 @@ Thông tin bị xóa trong cổng thông tin được chuyển vào thùng rác,
 Mật khẩu đã đổi của tài khoản cấu hình được lưu trong bảng `user_profiles` dưới dạng PBKDF2 hash có salt, không lưu văn bản thuần. Sau khi đổi mật khẩu, lần đăng nhập tiếp theo dùng mật khẩu mới thay cho mật khẩu khai báo trong `APP_USERS`.
 
 Địa chỉ `icollector.duyvu2003dk.workers.dev` được cấu hình chuyển tiếp tạm thời sang `myweb.duyvu2003dk.workers.dev`. Cần triển khai thay đổi Worker chuyển tiếp trong dự án iCollector để địa chỉ cũ mở trang hợp nhất.
+
+## Nhắc lịch qua Zalo Bot
+
+Bot gửi nhắc từng công việc chưa hoàn thành vào giờ bắt đầu, và có thể gửi thêm một bản tóm tắt hằng ngày theo giờ người dùng chọn (múi giờ `Asia/Ho_Chi_Minh`). Tài khoản không thể nhận tin cho đến khi chủ tài khoản đăng nhập ứng dụng, tạo mã liên kết trong **Cài đặt tài khoản → Nhắc Zalo**, rồi gửi lệnh `/start <mã>` trong cuộc trò chuyện riêng với bot. Mã chỉ dùng một lần và hết hạn sau 10 phút. Không thể liên kết cùng một cuộc trò chuyện với nhiều tài khoản lịch.
+
+Quản trị viên cấu hình hai secrets cho Cloudflare Worker và triển khai migration mới:
+
+```powershell
+npx.cmd wrangler secret put ZALO_BOT_TOKEN
+npx.cmd wrangler secret put ZALO_WEBHOOK_SECRET
+npm.cmd run db:migrate:remote
+npm.cmd run deploy
+```
+
+Khi chạy local, đặt hai giá trị này trong `.dev.vars` (không commit file đó):
+
+```text
+ZALO_BOT_TOKEN=token_bot_cua_ban
+ZALO_WEBHOOK_SECRET=chuoi_bi_mat_tu_8_den_256_ky_tu
+```
+
+`ZALO_WEBHOOK_SECRET` phải dài từ 8 đến 256 ký tự. Sau khi triển khai, quản trị viên đăng nhập, mở **Cài đặt tài khoản → Nhắc Zalo** và chọn **Thiết lập webhook**; Worker sẽ đăng ký webhook HTTPS trên tên miền đang mở và kiểm tra phản hồi. Chỉ tài khoản `duyvu@pvdv` được phép thực hiện thao tác này. Không gửi token/secret vào chat hoặc lưu trong mã frontend.
+
+Người dùng có thể bật/tắt từng loại nhắc, đặt giờ gửi bản tóm tắt hoặc ngắt liên kết trong cùng mục cài đặt. Bot chỉ gửi tin nhắn sau khi người dùng chủ động liên kết; công việc đã hoàn thành sẽ không được nhắc. Cron của Worker chạy mỗi phút nên thời gian gửi có độ chính xác trong khoảng một phút.

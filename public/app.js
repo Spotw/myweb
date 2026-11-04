@@ -725,6 +725,220 @@
     );
   }
 
+  function ZaloSettings({ username }) {
+    const [settings, setSettings] = useState(null);
+    const [code, setCode] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
+
+    useEffect(() => {
+      let active = true;
+      apiRequest('/api/zalo/settings')
+        .then((result) => {
+          if (active) setSettings(result);
+        })
+        .catch((settingsError) => {
+          if (active) setError(settingsError.message);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+      return () => { active = false; };
+    }, []);
+
+    async function saveSettings(event) {
+      event.preventDefault();
+      setError('');
+      setNotice('');
+      setSaving(true);
+      try {
+        const result = await apiRequest('/api/zalo/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            taskRemindersEnabled: settings.taskRemindersEnabled,
+            dailyDigestEnabled: settings.dailyDigestEnabled,
+            dailyDigestTime: settings.dailyDigestTime
+          })
+        });
+        setSettings(result);
+        setNotice('Đã lưu cài đặt nhắc lịch Zalo.');
+      } catch (saveError) {
+        setError(saveError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function createLinkCode() {
+      setError('');
+      setNotice('');
+      setSaving(true);
+      try {
+        const result = await apiRequest('/api/zalo/link-code', { method: 'POST' });
+        setCode(result.code);
+        setNotice('Mã liên kết có hiệu lực trong 10 phút.');
+      } catch (linkError) {
+        setError(linkError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function unlink() {
+      setError('');
+      setNotice('');
+      setSaving(true);
+      try {
+        await apiRequest('/api/zalo/unlink', { method: 'POST' });
+        setSettings((current) => ({
+          ...current,
+          linked: false,
+          taskRemindersEnabled: false,
+          dailyDigestEnabled: false
+        }));
+        setCode('');
+        setNotice('Đã ngắt liên kết Zalo và tắt nhắc lịch.');
+      } catch (unlinkError) {
+        setError(unlinkError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function setupWebhook() {
+      setError('');
+      setNotice('');
+      setSaving(true);
+      try {
+        const result = await apiRequest('/api/zalo/setup-webhook', { method: 'POST' });
+        if (result.verification?.ok) {
+          setNotice('Webhook Zalo đã được thiết lập và xác minh thành công.');
+        } else {
+          setError(
+            `Webhook chưa xác minh thành công: ${
+              result.verification?.hint || result.verification?.outcome || 'không có thông tin xác minh'
+            }. Hãy kiểm tra URL và phản hồi của Worker.`
+          );
+        }
+      } catch (webhookError) {
+        setError(webhookError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    async function copyCommand() {
+      try {
+        await navigator.clipboard.writeText(`/start ${code}`);
+        setNotice('Đã sao chép lệnh liên kết.');
+      } catch {
+        setError('Không sao chép được. Hãy chọn và sao chép lệnh đang hiển thị.');
+      }
+    }
+
+    if (loading) {
+      return h('p', { className: 'account-form-hint', role: 'status' }, 'Đang tải cài đặt Zalo...');
+    }
+    if (!settings) return null;
+
+    return h(React.Fragment, null,
+      error && h('p', { className: 'account-message error', role: 'alert' }, error),
+      notice && h('p', { className: 'account-message success', role: 'status' }, notice),
+      !settings.configured && h('p', { className: 'account-message error', role: 'alert' },
+        'Bot chưa được cấu hình. Quản trị viên cần thêm ZALO_BOT_TOKEN và ZALO_WEBHOOK_SECRET vào Cloudflare Worker.'
+      ),
+      settings.botName && h('p', { className: 'account-form-hint' }, `Tên bot: ${settings.botName}`),
+      h('p', { className: 'account-form-hint' }, 'Tất cả giờ nhắc được tính theo giờ Việt Nam (UTC+7).'),
+      h('form', { className: 'account-form zalo-settings-form', onSubmit: saveSettings },
+        h('label', { className: 'zalo-option' },
+          h('input', {
+            type: 'checkbox',
+            checked: settings.taskRemindersEnabled,
+            onChange: (event) => setSettings((current) => ({
+              ...current,
+              taskRemindersEnabled: event.target.checked
+            }))
+          }),
+          h('span', null,
+            h('strong', null, 'Nhắc từng công việc đúng giờ'),
+            h('small', null, 'Gửi tin nhắn khi đến giờ bắt đầu của công việc chưa hoàn thành.')
+          )
+        ),
+        h('label', { className: 'zalo-option' },
+          h('input', {
+            type: 'checkbox',
+            checked: settings.dailyDigestEnabled,
+            onChange: (event) => setSettings((current) => ({
+              ...current,
+              dailyDigestEnabled: event.target.checked
+            }))
+          }),
+          h('span', null,
+            h('strong', null, 'Gửi tóm tắt lịch mỗi ngày'),
+            h('small', null, 'Gồm các công việc chưa hoàn thành trong ngày.')
+          )
+        ),
+        h('label', { htmlFor: 'zalo-digest-time' }, 'Giờ gửi tóm tắt (giờ Việt Nam)'),
+        h('input', {
+          id: 'zalo-digest-time',
+          type: 'time',
+          value: settings.dailyDigestTime,
+          onChange: (event) => setSettings((current) => ({
+            ...current,
+            dailyDigestTime: event.target.value
+          }))
+        }),
+        h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
+          saving ? 'Đang lưu...' : 'Lưu cài đặt nhắc'
+        )
+      ),
+      h('div', { className: 'zalo-link-panel' },
+        h('strong', null, settings.linked ? 'Zalo đã liên kết' : 'Liên kết Zalo cá nhân'),
+        h('p', { className: 'account-form-hint' },
+          'Mở cuộc trò chuyện riêng với bot. Việc liên kết cho phép bot gửi các nhắc lịch đã chọn.'
+        ),
+        settings.linked
+          ? h('button', {
+              className: 'btn workspace-logout',
+              type: 'button',
+              disabled: saving,
+              onClick: unlink
+            }, saving ? 'Đang ngắt...' : 'Ngắt liên kết Zalo')
+          : h('button', {
+              className: 'btn btn-save',
+              type: 'button',
+              disabled: saving || !settings.configured,
+              onClick: createLinkCode
+            }, saving ? 'Đang tạo mã...' : 'Tạo mã liên kết'),
+        code && !settings.linked && h('div', { className: 'zalo-link-code' },
+          h('code', null, `/start ${code}`),
+          h('button', {
+            className: 'btn',
+            type: 'button',
+            onClick: copyCommand
+          }, 'Sao chép lệnh'),
+          h('p', { className: 'account-form-hint' },
+            `Tìm bot ${settings.botName || 'do quản trị viên cung cấp'} trên Zalo rồi gửi nguyên lệnh này trong 10 phút.`
+          )
+        )
+      ),
+      username.toLowerCase() === 'duyvu@pvdv' && h('div', { className: 'zalo-link-panel' },
+        h('strong', null, 'Cấu hình webhook (quản trị viên)'),
+        h('p', { className: 'account-form-hint' },
+          'Sau khi thêm hai Worker secrets và triển khai, đăng ký webhook đến tên miền hiện tại để bot nhận lệnh liên kết.'
+        ),
+        h('button', {
+          className: 'btn',
+          type: 'button',
+          disabled: saving || !settings.configured,
+          onClick: setupWebhook
+        }, saving ? 'Đang thiết lập...' : 'Thiết lập webhook')
+      )
+    );
+  }
+
   function AccountDialog({ username, onClose }) {
     const [section, setSection] = useState('password');
     const [currentPassword, setCurrentPassword] = useState('');
@@ -835,11 +1049,20 @@
         'aria-selected': section === 'accounts',
         className: section === 'accounts' ? 'active' : '',
         onClick: () => { setSection('accounts'); setError(''); setNotice(''); }
-      }, 'Tạo tài khoản')
+      }, 'Tạo tài khoản'),
+      h('button', {
+        type: 'button',
+        role: 'tab',
+        'aria-selected': section === 'zalo',
+        className: section === 'zalo' ? 'active' : '',
+        onClick: () => { setSection('zalo'); setError(''); setNotice(''); }
+      }, 'Nhắc Zalo')
     ),
     error && h('p', { className: 'account-message error', role: 'alert' }, error),
     notice && h('p', { className: 'account-message success', role: 'status' }, notice),
-    section === 'accounts'
+    section === 'zalo'
+      ? h(ZaloSettings, { username })
+      : section === 'accounts'
       ? h('form', { className: 'account-form', onSubmit: createAccount },
             h('label', { htmlFor: 'new-account-username' }, 'Tên đăng nhập mới'),
             h('input', {

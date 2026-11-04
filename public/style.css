@@ -1538,6 +1538,88 @@ button {
   color: var(--green-dark);
 }
 
+.zalo-settings-form {
+  margin-top: 14px;
+}
+
+.account-form .zalo-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfa;
+  cursor: pointer;
+}
+
+.account-form .zalo-option input {
+  width: 18px;
+  min-height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--green);
+}
+
+.zalo-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.zalo-option strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.zalo-option small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.zalo-link-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfcfa;
+}
+
+.zalo-link-panel > strong {
+  font-size: 12px;
+}
+
+.zalo-link-panel .account-form-hint {
+  line-height: 1.6;
+}
+
+.zalo-link-code {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.zalo-link-code code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 12px;
+}
+
+.zalo-link-panel .btn,
+.zalo-settings-form .btn {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
 .login-shell {
   display: grid;
   min-height: 100vh;

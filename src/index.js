@@ -10,6 +10,8 @@ const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 100000;
 const ACCOUNT_CREATOR_USERNAME = 'duyvu@pvdv';
+const ZALO_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const ZALO_WEBHOOK_PATH = '/api/zalo/webhook';
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
 const ENTRY_UPLOAD_QUOTA_BYTES = 500 * 1000 * 1000;
 const ENTRY_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
@@ -1305,62 +1307,463 @@ async function handleLegacyNotes(request, db, pathname) {
   return json({ ok: true });
 }
 
+function secretsMatch(candidate, expected) {
+  if (typeof candidate !== 'string' || typeof expected !== 'string') return false;
+  const candidateBytes = encoder.encode(candidate);
+  const expectedBytes = encoder.encode(expected);
+  let difference = candidateBytes.length ^ expectedBytes.length;
+  const length = Math.max(candidateBytes.length, expectedBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    difference |= (candidateBytes[index] || 0) ^ (expectedBytes[index] || 0);
+  }
+  return difference === 0;
+}
+
+async function callZaloBot(env, method, body) {
+  if (typeof env.ZALO_BOT_TOKEN !== 'string' || !env.ZALO_BOT_TOKEN) {
+    throw new Error('Thiếu cấu hình bí mật ZALO_BOT_TOKEN.');
+  }
+  const response = await fetch(
+    `https://bot-api.zaloplatforms.com/bot${env.ZALO_BOT_TOKEN}/${method}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }
+  );
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(`Zalo Bot API ${method} trả về phản hồi không hợp lệ (HTTP ${response.status}).`);
+  }
+  if (!response.ok || result?.ok !== true) {
+    throw new Error(`Zalo Bot API ${method} thất bại (HTTP ${response.status}).`);
+  }
+  return result;
+}
+
+async function sendZaloMessage(env, chatId, text) {
+  await callZaloBot(env, 'sendMessage', { chat_id: chatId, text });
+}
+
+async function handleZaloWebhook(request, env) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  const secret = env.ZALO_WEBHOOK_SECRET;
+  if (typeof secret !== 'string' || secret.length < 8 || secret.length > 256) {
+    return json({ error: 'Webhook Zalo chưa được cấu hình.' }, 503);
+  }
+  if (!secretsMatch(request.headers.get('X-Bot-Api-Secret-Token') || '', secret)) {
+    return json({ error: 'Webhook secret không hợp lệ.' }, 403);
+  }
+
+  const body = await readJson(request);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json({ ok: true });
+  }
+  const update = body.result && typeof body.result === 'object' ? body.result : body;
+  const message = update.message || update.callback_query?.message;
+  const chat = message?.chat;
+  const chatId = typeof chat?.id === 'string' ? chat.id : '';
+  if (
+    !message ||
+    !chatId ||
+    chatId.length > 255 ||
+    (chat.chat_type && chat.chat_type !== 'PRIVATE') ||
+    message.from?.is_bot === true
+  ) {
+    return json({ ok: true });
+  }
+
+  const text = typeof message.text === 'string' ? message.text.trim() : '';
+  const startMatch = text.match(/^\/start(?:@[A-Za-z0-9_]+)?(?:\s+([A-Za-z0-9_-]+))?$/);
+  if (!startMatch) return json({ ok: true });
+
+  const existingLink = await env.DB.prepare(
+    'SELECT username FROM zalo_bot_links WHERE chat_id = ?'
+  ).bind(chatId).first();
+  if (existingLink) {
+    await sendZaloMessage(env, chatId, 'Tài khoản Zalo này đã được liên kết với một tài khoản lịch trình.');
+    return json({ ok: true });
+  }
+
+  if (!startMatch[1]) {
+    await sendZaloMessage(
+      env,
+      chatId,
+      'Để liên kết, hãy đăng nhập ứng dụng, mở Cài đặt tài khoản → Nhắc Zalo, tạo mã liên kết rồi gửi /start kèm mã này.'
+    );
+    return json({ ok: true });
+  }
+
+  const linkCode = startMatch[1];
+  const pendingLink = await env.DB.prepare(
+    `SELECT username FROM zalo_bot_links
+     WHERE link_code = ? AND link_code_expires_at > ?`
+  ).bind(linkCode, Date.now()).first();
+  if (!pendingLink) {
+    await sendZaloMessage(env, chatId, 'Mã liên kết không hợp lệ hoặc đã hết hạn. Hãy tạo mã mới trong cài đặt tài khoản.');
+    return json({ ok: true });
+  }
+
+  const linkedAt = Date.now();
+  const result = await env.DB.prepare(
+    `UPDATE zalo_bot_links
+     SET chat_id = ?, link_code = NULL, link_code_expires_at = NULL, linked_at = ?
+     WHERE username = ? AND link_code = ? AND link_code_expires_at > ?`
+  ).bind(chatId, linkedAt, pendingLink.username, linkCode, linkedAt).run();
+  if (!result.meta?.changes) {
+    const currentLink = await env.DB.prepare(
+      'SELECT username FROM zalo_bot_links WHERE chat_id = ?'
+    ).bind(chatId).first();
+    if (currentLink?.username === pendingLink.username) {
+      await sendZaloMessage(env, chatId, 'Đã liên kết thành công. Bạn sẽ nhận nhắc lịch qua bot này.');
+      return json({ ok: true });
+    }
+    await sendZaloMessage(env, chatId, 'Mã liên kết không hợp lệ hoặc đã được sử dụng. Hãy tạo mã mới.');
+    return json({ ok: true });
+  }
+
+  await sendZaloMessage(env, chatId, 'Đã liên kết thành công. Bạn sẽ nhận nhắc lịch qua bot này.');
+  return json({ ok: true });
+}
+
+async function readZaloSettings(db, username, env) {
+  const settings = await db.prepare(
+    `SELECT chat_id, task_reminders_enabled, daily_digest_enabled, daily_digest_time
+     FROM zalo_bot_links WHERE username = ?`
+  ).bind(username.toLowerCase()).first();
+  return {
+    configured: Boolean(
+      typeof env.ZALO_BOT_TOKEN === 'string' &&
+      env.ZALO_BOT_TOKEN &&
+      typeof env.ZALO_WEBHOOK_SECRET === 'string' &&
+      env.ZALO_WEBHOOK_SECRET.length >= 8 &&
+      env.ZALO_WEBHOOK_SECRET.length <= 256
+    ),
+    linked: Boolean(settings?.chat_id),
+    taskRemindersEnabled: settings ? Boolean(settings.task_reminders_enabled) : true,
+    dailyDigestEnabled: Boolean(settings?.daily_digest_enabled),
+    dailyDigestTime: settings?.daily_digest_time || '08:00',
+    botName: typeof env.ZALO_BOT_NAME === 'string' ? env.ZALO_BOT_NAME : ''
+  };
+}
+
+async function handleZaloApi(request, env, username, pathname) {
+  if (pathname === '/api/zalo/settings') {
+    if (request.method === 'GET') {
+      return json(await readZaloSettings(env.DB, username, env));
+    }
+    if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
+
+    const body = await readJson(request);
+    if (
+      !body ||
+      typeof body.taskRemindersEnabled !== 'boolean' ||
+      typeof body.dailyDigestEnabled !== 'boolean' ||
+      typeof body.dailyDigestTime !== 'string' ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(body.dailyDigestTime)
+    ) {
+      return json({ error: 'Cài đặt nhắc lịch không hợp lệ.' }, 400);
+    }
+    await env.DB.prepare(
+      `INSERT INTO zalo_bot_links
+       (username, task_reminders_enabled, daily_digest_enabled, daily_digest_time)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(username) DO UPDATE SET
+         task_reminders_enabled = excluded.task_reminders_enabled,
+         daily_digest_enabled = excluded.daily_digest_enabled,
+         daily_digest_time = excluded.daily_digest_time`
+    ).bind(
+      username.toLowerCase(),
+      Number(body.taskRemindersEnabled),
+      Number(body.dailyDigestEnabled),
+      body.dailyDigestTime
+    ).run();
+    return json(await readZaloSettings(env.DB, username, env));
+  }
+
+  if (pathname === '/api/zalo/link-code') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    const settings = await readZaloSettings(env.DB, username, env);
+    if (!settings.configured) {
+      return json({ error: 'Quản trị viên cần cấu hình ZALO_BOT_TOKEN và ZALO_WEBHOOK_SECRET trước.' }, 503);
+    }
+    const code = toBase64Url(crypto.getRandomValues(new Uint8Array(18)));
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    await env.DB.prepare(
+      `INSERT INTO zalo_bot_links (username, link_code, link_code_expires_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(username) DO UPDATE SET
+         link_code = excluded.link_code,
+         link_code_expires_at = excluded.link_code_expires_at`
+    ).bind(username.toLowerCase(), code, expiresAt).run();
+    return json({ code, expiresInSeconds: 600 });
+  }
+
+  if (pathname === '/api/zalo/unlink') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    await env.DB.prepare(
+      `UPDATE zalo_bot_links
+       SET chat_id = NULL, link_code = NULL, link_code_expires_at = NULL,
+           task_reminders_enabled = 0, daily_digest_enabled = 0, linked_at = NULL
+       WHERE username = ?`
+    ).bind(username.toLowerCase()).run();
+    return json({ ok: true });
+  }
+
+  if (pathname === '/api/zalo/setup-webhook') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (username.toLowerCase() !== ACCOUNT_CREATOR_USERNAME) {
+      return json({ error: 'Chỉ quản trị viên mới có thể thiết lập webhook.' }, 403);
+    }
+    const secret = env.ZALO_WEBHOOK_SECRET;
+    if (
+      typeof env.ZALO_BOT_TOKEN !== 'string' ||
+      !env.ZALO_BOT_TOKEN ||
+      typeof secret !== 'string' ||
+      secret.length < 8 ||
+      secret.length > 256
+    ) {
+      return json({ error: 'Cần cấu hình ZALO_BOT_TOKEN và ZALO_WEBHOOK_SECRET.' }, 503);
+    }
+    const webhookUrl = `${new URL(request.url).origin}${ZALO_WEBHOOK_PATH}`;
+    let result;
+    try {
+      result = await callZaloBot(env, 'setWebhook', {
+        url: webhookUrl,
+        secret_token: secret
+      });
+    } catch (error) {
+      console.error('Lỗi thiết lập webhook Zalo:', error);
+      return json({ error: `Không thiết lập được webhook Zalo: ${error.message}` }, 502);
+    }
+    return json({
+      ok: true,
+      webhookUrl,
+      verification: result.result?.verification || null
+    });
+  }
+
+  return null;
+}
+
+async function getTasksForDate(db, username, date) {
+  const { table, recurrenceTable, overrideTable } = await ensureScheduleTables(db, username);
+  const { results: dailyRows } = await db.prepare(
+    `SELECT tasks FROM "${table}" WHERE date = ?`
+  ).bind(date).all();
+  const tasks = [];
+  for (const row of dailyRows) {
+    const parsedTasks = JSON.parse(row.tasks);
+    if (!isValidTaskList(parsedTasks)) throw new Error(`Dữ liệu công việc không hợp lệ: ${date}`);
+    tasks.push(...parsedTasks.map((task) => ({ ...task, repeat: task.repeat || 'none' })));
+  }
+
+  const [year, month] = date.split('-').map(Number);
+  const { results: recurringRows } = await db.prepare(
+    `SELECT id, start_date, task FROM "${recurrenceTable}"
+     WHERE start_date >= ? AND start_date <= ?`
+  ).bind(recurrenceStartCutoff(year, month), date).all();
+  const { results: overrides } = await db.prepare(
+    `SELECT series_id, task, canceled FROM "${overrideTable}" WHERE date = ?`
+  ).bind(date).all();
+  const overridesBySeries = new Map(overrides.map((override) => [
+    override.series_id,
+    override.canceled ? { canceled: true } : JSON.parse(override.task)
+  ]));
+
+  for (const series of recurringRows) {
+    const task = JSON.parse(series.task);
+    if (!isValidTaskList([task]) || !RECURRENCE_FREQUENCIES.has(task.repeat) || task.repeat === 'none') {
+      throw new Error(`Dữ liệu lặp lại không hợp lệ: ${series.id}`);
+    }
+    const repeatUntil = task.repeatUntil || addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS);
+    if (!isRecurrenceDate(series.start_date, task.repeat, date, repeatUntil)) continue;
+    const override = overridesBySeries.get(series.id);
+    if (override?.canceled) continue;
+    tasks.push({
+      ...task,
+      ...(override || {}),
+      id: series.id,
+      seriesId: series.id,
+      occurrenceDate: date,
+      repeatStartDate: series.start_date,
+      repeatUntil
+    });
+  }
+  return tasks;
+}
+
+function vietnamDateTime(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ZALO_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}`
+  };
+}
+
+async function claimZaloDelivery(db, username, deliveryKey) {
+  const now = Date.now();
+  const result = await db.prepare(
+    `INSERT INTO zalo_reminder_deliveries (username, delivery_key, created_at, status)
+     VALUES (?, ?, ?, 'sending')
+     ON CONFLICT(username, delivery_key) DO UPDATE SET
+       created_at = excluded.created_at,
+       status = 'sending'
+     WHERE zalo_reminder_deliveries.status = 'sending'
+       AND zalo_reminder_deliveries.created_at < ?`
+  ).bind(username, deliveryKey, now, now - 5 * 60 * 1000).run();
+  return Boolean(result.meta?.changes);
+}
+
+async function markZaloDeliverySent(db, username, deliveryKey) {
+  await db.prepare(
+    `UPDATE zalo_reminder_deliveries SET status = 'sent'
+     WHERE username = ? AND delivery_key = ?`
+  ).bind(username, deliveryKey).run();
+}
+
+async function releaseZaloDelivery(db, username, deliveryKey) {
+  await db.prepare(
+    'DELETE FROM zalo_reminder_deliveries WHERE username = ? AND delivery_key = ?'
+  ).bind(username, deliveryKey).run();
+}
+
+async function sendZaloReminders(env) {
+  const { results: links } = await env.DB.prepare(
+    `SELECT username, chat_id, task_reminders_enabled, daily_digest_enabled, daily_digest_time
+     FROM zalo_bot_links WHERE chat_id IS NOT NULL
+       AND (task_reminders_enabled = 1 OR daily_digest_enabled = 1)`
+  ).all();
+  if (!links.length) return;
+  if (typeof env.ZALO_BOT_TOKEN !== 'string' || !env.ZALO_BOT_TOKEN) {
+    throw new Error('Thiếu cấu hình bí mật ZALO_BOT_TOKEN cho nhắc lịch Zalo.');
+  }
+
+  const now = vietnamDateTime(new Date());
+  for (const link of links) {
+    try {
+      const tasks = (await getTasksForDate(env.DB, link.username, now.date))
+        .filter((task) => !task.done);
+      if (link.task_reminders_enabled) {
+        const dueTasks = tasks.filter((task) => task.startTime === now.time);
+        for (const task of dueTasks) {
+          const deliveryKey = `task:${now.date}:${task.id}:${now.time}`;
+          if (!await claimZaloDelivery(env.DB, link.username, deliveryKey)) continue;
+          try {
+            await sendZaloMessage(
+              env,
+              link.chat_id,
+              `⏰ Nhắc lịch ${now.time}\n${task.title}`
+            );
+          } catch (error) {
+            await releaseZaloDelivery(env.DB, link.username, deliveryKey);
+            throw error;
+          }
+          await markZaloDeliverySent(env.DB, link.username, deliveryKey);
+        }
+      }
+
+      if (link.daily_digest_enabled && link.daily_digest_time === now.time) {
+        const deliveryKey = `digest:${now.date}`;
+        if (await claimZaloDelivery(env.DB, link.username, deliveryKey)) {
+          const lines = tasks.length
+            ? tasks.map((task) =>
+              `• ${task.startTime ? `${task.startTime} ` : ''}${task.title.slice(0, 72)}`
+            )
+            : ['Hôm nay bạn chưa có lịch trình cần thực hiện.'];
+          try {
+            await sendZaloMessage(
+              env,
+              link.chat_id,
+              `📅 Lịch trình hôm nay\n${lines.join('\n')}`
+            );
+          } catch (error) {
+            await releaseZaloDelivery(env.DB, link.username, deliveryKey);
+            throw error;
+          }
+          await markZaloDeliverySent(env.DB, link.username, deliveryKey);
+        }
+      }
+    } catch (error) {
+      console.error(`Lỗi gửi nhắc lịch Zalo cho tài khoản ${link.username}:`, error);
+    }
+  }
+}
+
 export default {
   async scheduled(controller, env) {
-    const { results: expiredEntries } = await env.DB.prepare(
-      `SELECT id, file_key FROM entries
-       WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', '-30 days')
-       ORDER BY id LIMIT 100`
-    ).all();
-    for (const entry of expiredEntries) {
-      if (entry.file_key) await env.ENTRY_FILES.delete(entry.file_key);
-    }
-    if (expiredEntries.length) {
-      await env.DB.batch(expiredEntries.map((entry) =>
-        env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entry.id)
-      ));
-    }
-
-    const { results: queuedFiles } = await env.DB.prepare(
-      'SELECT object_key FROM entry_file_cleanup ORDER BY queued_at LIMIT 100'
-    ).all();
-    for (const file of queuedFiles) {
-      await env.ENTRY_FILES.delete(file.object_key);
-      await env.DB.prepare(
-        'DELETE FROM entry_file_cleanup WHERE object_key = ?'
-      ).bind(file.object_key).run();
-    }
-
-    const { results: expiredUploads } = await env.DB.prepare(
-      `SELECT * FROM entry_upload_sessions
-       WHERE started_at <= datetime('now', '-1 day') ORDER BY started_at LIMIT 20`
-    ).all();
-    for (const upload of expiredUploads) {
-      const object = await env.ENTRY_FILES.head(upload.object_key);
-      if (object) {
-        await env.ENTRY_FILES.delete(upload.object_key);
-      } else {
-        await env.ENTRY_FILES.resumeMultipartUpload(
-          upload.object_key,
-          upload.multipart_upload_id
-        ).abort();
+    if (new Date().getUTCMinutes() === 0) {
+      const { results: expiredEntries } = await env.DB.prepare(
+        `SELECT id, file_key FROM entries
+         WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', '-30 days')
+         ORDER BY id LIMIT 100`
+      ).all();
+      for (const entry of expiredEntries) {
+        if (entry.file_key) await env.ENTRY_FILES.delete(entry.file_key);
       }
-      await env.DB.batch([
-        env.DB.prepare(
-          `UPDATE entry_upload_quota
-           SET reserved_bytes = MAX(0, reserved_bytes - ?)
-           WHERE username = ? AND usage_year = ?`
-        ).bind(upload.file_size, upload.username, upload.usage_year),
-        env.DB.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(upload.token),
-        env.DB.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(upload.token)
-      ]);
+      if (expiredEntries.length) {
+        await env.DB.batch(expiredEntries.map((entry) =>
+          env.DB.prepare('DELETE FROM entries WHERE id = ?').bind(entry.id)
+        ));
+      }
+
+      const { results: queuedFiles } = await env.DB.prepare(
+        'SELECT object_key FROM entry_file_cleanup ORDER BY queued_at LIMIT 100'
+      ).all();
+      for (const file of queuedFiles) {
+        await env.ENTRY_FILES.delete(file.object_key);
+        await env.DB.prepare(
+          'DELETE FROM entry_file_cleanup WHERE object_key = ?'
+        ).bind(file.object_key).run();
+      }
+
+      const { results: expiredUploads } = await env.DB.prepare(
+        `SELECT * FROM entry_upload_sessions
+         WHERE started_at <= datetime('now', '-1 day') ORDER BY started_at LIMIT 20`
+      ).all();
+      for (const upload of expiredUploads) {
+        const object = await env.ENTRY_FILES.head(upload.object_key);
+        if (object) {
+          await env.ENTRY_FILES.delete(upload.object_key);
+        } else {
+          await env.ENTRY_FILES.resumeMultipartUpload(
+            upload.object_key,
+            upload.multipart_upload_id
+          ).abort();
+        }
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE entry_upload_quota
+             SET reserved_bytes = MAX(0, reserved_bytes - ?)
+             WHERE username = ? AND usage_year = ?`
+          ).bind(upload.file_size, upload.username, upload.usage_year),
+          env.DB.prepare('DELETE FROM entry_upload_parts WHERE token = ?').bind(upload.token),
+          env.DB.prepare('DELETE FROM entry_upload_sessions WHERE token = ?').bind(upload.token)
+        ]);
+      }
+      await env.DB.prepare(
+        'DELETE FROM zalo_reminder_deliveries WHERE created_at < ?'
+      ).bind(Date.now() - 90 * 24 * 60 * 60 * 1000).run();
     }
+    await sendZaloReminders(env);
   },
 
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
       const { pathname } = url;
+      if (pathname === ZALO_WEBHOOK_PATH) return await handleZaloWebhook(request, env);
       const authResponse = await handleAuth(request, env, pathname);
       if (authResponse) return authResponse;
 
@@ -1372,6 +1775,9 @@ export default {
       if (['POST', 'PUT', 'DELETE'].includes(request.method) && !hasValidOrigin(request)) {
         return json({ error: 'Nguồn gửi yêu cầu không hợp lệ.' }, 403);
       }
+
+      const zaloResponse = await handleZaloApi(request, env, session.username, pathname);
+      if (zaloResponse) return zaloResponse;
 
       const scheduleResponse = await handleSchedule(request, env.DB, session.username, pathname, url);
       if (scheduleResponse) return scheduleResponse;
