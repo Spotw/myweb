@@ -10,12 +10,6 @@ const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 100000;
 const ACCOUNT_CREATOR_USERNAME = 'duyvu@pvdv';
-const PROFILE_LIMITS = {
-  full_name: 120,
-  hometown: 200,
-  current_location: 200,
-  workplace: 200
-};
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
 const ENTRY_UPLOAD_QUOTA_BYTES = 500 * 1000 * 1000;
 const ENTRY_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
@@ -249,68 +243,6 @@ async function readManagedAccount(db, username) {
   ).bind(username.toLowerCase()).first();
 }
 
-async function handleAccountProfile(request, db, username) {
-  if (request.method === 'GET') {
-    const profile = await db.prepare(
-      'SELECT full_name, birth_year, hometown, current_location, workplace FROM user_profiles WHERE username = ?'
-    ).bind(username.toLowerCase()).first();
-    return json({
-      profile: {
-        full_name: profile?.full_name || '',
-        birth_year: profile?.birth_year || '',
-        hometown: profile?.hometown || '',
-        current_location: profile?.current_location || '',
-        workplace: profile?.workplace || ''
-      }
-    });
-  }
-
-  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
-  const body = await readJson(request);
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return json({ error: 'Nội dung gửi lên không phải JSON hợp lệ.' }, 400);
-  }
-
-  const profile = {};
-  for (const [field, limit] of Object.entries(PROFILE_LIMITS)) {
-    if (typeof body[field] !== 'string') {
-      return json({ error: 'Các trường thông tin cá nhân cần có định dạng văn bản.' }, 400);
-    }
-    profile[field] = body[field].trim();
-    if (profile[field].length > limit) {
-      return json({ error: `Trường thông tin vượt quá ${limit} ký tự.` }, 400);
-    }
-  }
-
-  const currentYear = new Date().getFullYear();
-  const birthYear = body.birth_year === '' ? null : Number(body.birth_year);
-  if (
-    birthYear !== null &&
-    (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > currentYear)
-  ) {
-    return json({ error: `Năm sinh phải nằm trong khoảng 1900 đến ${currentYear}.` }, 400);
-  }
-
-  await db.prepare(
-    `INSERT INTO user_profiles (username, full_name, birth_year, hometown, current_location, workplace)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(username) DO UPDATE SET
-       full_name = excluded.full_name,
-       birth_year = excluded.birth_year,
-       hometown = excluded.hometown,
-       current_location = excluded.current_location,
-       workplace = excluded.workplace`
-  ).bind(
-    username.toLowerCase(),
-    profile.full_name,
-    birthYear,
-    profile.hometown,
-    profile.current_location,
-    profile.workplace
-  ).run();
-  return json({ ok: true });
-}
-
 async function handlePasswordChange(request, db, username, env) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   const body = await readJson(request);
@@ -463,12 +395,9 @@ async function handleAuth(request, env, pathname) {
     return createManagedAccount(request, env.DB, session.username, env);
   }
 
-  if (pathname === '/api/auth/profile' || pathname === '/api/auth/password') {
+  if (pathname === '/api/auth/password') {
     const session = await readSession(request, env);
     if (!session) return json({ error: 'Vui lòng đăng nhập để tiếp tục.' }, 401);
-    if (pathname === '/api/auth/profile') {
-      return handleAccountProfile(request, env.DB, session.username);
-    }
     return handlePasswordChange(request, env.DB, session.username, env);
   }
 

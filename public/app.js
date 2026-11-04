@@ -726,70 +726,26 @@
   }
 
   function AccountDialog({ username, onClose }) {
-    const emptyProfile = {
-      full_name: '',
-      birth_year: '',
-      hometown: '',
-      current_location: '',
-      workplace: ''
-    };
-    const [section, setSection] = useState('profile');
-    const [profile, setProfile] = useState(emptyProfile);
+    const [section, setSection] = useState('password');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [accountUsername, setAccountUsername] = useState('');
     const [accountPassword, setAccountPassword] = useState('');
     const [confirmAccountPassword, setConfirmAccountPassword] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [profileLoaded, setProfileLoaded] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
 
     useEffect(() => {
-      let active = true;
-      apiRequest('/api/auth/profile')
-        .then((result) => {
-          if (active) {
-            setProfile({ ...emptyProfile, ...result.profile });
-            setProfileLoaded(true);
-          }
-        })
-        .catch((profileError) => {
-          if (active) setError(profileError.message);
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-
       function handleKeyDown(event) {
         if (event.key === 'Escape') onClose();
       }
       document.addEventListener('keydown', handleKeyDown);
       return () => {
-        active = false;
         document.removeEventListener('keydown', handleKeyDown);
       };
     }, []);
-
-    async function saveProfile(event) {
-      event.preventDefault();
-      setSaving(true);
-      setError('');
-      setNotice('');
-      try {
-        await apiRequest('/api/auth/profile', {
-          method: 'PUT',
-          body: JSON.stringify(profile)
-        });
-        setNotice('Đã lưu thông tin cá nhân.');
-      } catch (saveError) {
-        setError(saveError.message);
-      } finally {
-        setSaving(false);
-      }
-    }
 
     async function changePassword(event) {
       event.preventDefault();
@@ -845,19 +801,6 @@
       }
     }
 
-    function profileField(id, label, key, maxLength, placeholder = '') {
-      return h(React.Fragment, { key: id },
-        h('label', { htmlFor: id }, label),
-        h('input', {
-          id,
-          value: profile[key],
-          maxLength,
-          placeholder,
-          onChange: (event) => setProfile((current) => ({ ...current, [key]: event.target.value }))
-        })
-      );
-    }
-
     return h('div', {
       className: 'dialog-backdrop',
       onMouseDown: (event) => {
@@ -877,15 +820,8 @@
       'aria-label': 'Đóng'
     }, '×'),
     h('span', { className: 'section-kicker' }, 'TÀI KHOẢN'),
-    h('h2', { id: 'account-dialog-title' }, 'Thông tin của bạn'),
+    h('h2', { id: 'account-dialog-title' }, 'Cài đặt tài khoản'),
     h('div', { className: 'account-dialog-tabs', role: 'tablist', 'aria-label': 'Cài đặt tài khoản' },
-      h('button', {
-        type: 'button',
-        role: 'tab',
-        'aria-selected': section === 'profile',
-        className: section === 'profile' ? 'active' : '',
-        onClick: () => { setSection('profile'); setError(''); setNotice(''); }
-      }, 'Thông tin cá nhân'),
       h('button', {
         type: 'button',
         role: 'tab',
@@ -903,10 +839,8 @@
     ),
     error && h('p', { className: 'account-message error', role: 'alert' }, error),
     notice && h('p', { className: 'account-message success', role: 'status' }, notice),
-    loading && section !== 'accounts'
-      ? h('p', { className: 'login-loading' }, 'Đang tải thông tin tài khoản...')
-      : section === 'accounts'
-        ? h('form', { className: 'account-form', onSubmit: createAccount },
+    section === 'accounts'
+      ? h('form', { className: 'account-form', onSubmit: createAccount },
             h('label', { htmlFor: 'new-account-username' }, 'Tên đăng nhập mới'),
             h('input', {
               id: 'new-account-username',
@@ -945,28 +879,7 @@
               saving ? 'Đang tạo...' : 'Tạo tài khoản'
             )
           )
-        : !profileLoaded
-        ? h('p', { className: 'account-form-hint' }, 'Không thể tải hồ sơ. Hãy đóng cửa sổ và thử lại.')
-        : section === 'profile'
-        ? h('form', { className: 'account-form', onSubmit: saveProfile },
-            profileField('profile-full-name', 'Họ và tên', 'full_name', 120, 'Nguyễn Văn An'),
-            h('label', { htmlFor: 'profile-birth-year' }, 'Năm sinh'),
-            h('input', {
-              id: 'profile-birth-year',
-              type: 'number',
-              min: 1900,
-              max: new Date().getFullYear(),
-              value: profile.birth_year,
-              onChange: (event) => setProfile((current) => ({ ...current, birth_year: event.target.value }))
-            }),
-            profileField('profile-hometown', 'Quê quán', 'hometown', 200),
-            profileField('profile-current-location', 'Nơi ở hiện tại', 'current_location', 200),
-            profileField('profile-workplace', 'Nơi làm việc', 'workplace', 200),
-            h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
-              saving ? 'Đang lưu...' : 'Lưu thông tin'
-            )
-          )
-        : h('form', { className: 'account-form', onSubmit: changePassword },
+      : h('form', { className: 'account-form', onSubmit: changePassword },
             h('label', { htmlFor: 'current-password' }, 'Mật khẩu hiện tại'),
             h('input', {
               id: 'current-password',

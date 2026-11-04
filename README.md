@@ -36,7 +36,7 @@ Tài khoản `duyvu@pvdv` được phép tạo tài khoản đăng nhập trong 
 
 ## Cơ sở dữ liệu và triển khai
 
-Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo các bảng cần thiết (bao gồm lưu hồ sơ tài khoản, thông tin xác thực khi đổi mật khẩu, thùng rác và metadata tệp đính kèm của cổng thông tin):
+Worker tiếp tục sử dụng D1 `db_duyvu`. Trước khi triển khai, áp dụng migration để tạo các bảng cần thiết (bao gồm thông tin xác thực khi đổi mật khẩu, thùng rác và metadata tệp đính kèm của cổng thông tin):
 
 ```powershell
 npm run db:migrate:remote
@@ -47,6 +47,6 @@ Lịch của từng tài khoản được lưu trong bảng riêng có dạng `s
 
 Thông tin bị xóa trong cổng thông tin được chuyển vào thùng rác, có thể khôi phục trong vòng 30 ngày. Worker chạy tác vụ định kỳ mỗi giờ để xóa vĩnh viễn các mục đã quá hạn; không có thao tác làm trống thùng rác.
 
-Thông tin cá nhân và mật khẩu đã đổi được lưu trong bảng `user_profiles`; mật khẩu lưu dưới dạng PBKDF2 hash có salt, không lưu văn bản thuần. Sau khi đổi mật khẩu, lần đăng nhập tiếp theo dùng mật khẩu mới thay cho mật khẩu khai báo trong `APP_USERS`.
+Mật khẩu đã đổi của tài khoản cấu hình được lưu trong bảng `user_profiles` dưới dạng PBKDF2 hash có salt, không lưu văn bản thuần. Sau khi đổi mật khẩu, lần đăng nhập tiếp theo dùng mật khẩu mới thay cho mật khẩu khai báo trong `APP_USERS`.
 
 Địa chỉ `icollector.duyvu2003dk.workers.dev` được cấu hình chuyển tiếp tạm thời sang `myweb.duyvu2003dk.workers.dev`. Cần triển khai thay đổi Worker chuyển tiếp trong dự án iCollector để địa chỉ cũ mở trang hợp nhất.
