@@ -1560,28 +1560,39 @@
     async function saveTasks(date, tasks, seriesUpdate = null) {
       setSavingDates((current) => ({ ...current, [date]: true }));
       setDayErrors((current) => ({ ...current, [date]: '' }));
-      const hasNewRecurrence = tasks.some((task) =>
-        !task.seriesId && task.repeat && task.repeat !== 'none'
-      );
-      const displayedTasks = tasks.map((task) => {
-        if (seriesUpdate?.seriesId === task.seriesId && seriesUpdate.repeat === 'none') {
-          const standaloneTask = { ...task };
-          delete standaloneTask.seriesId;
-          delete standaloneTask.occurrenceDate;
-          delete standaloneTask.repeatStartDate;
-          return {
-            ...standaloneTask,
-            id: seriesUpdate.seriesId,
-            repeat: 'none',
-            repeatUntil: null
-          };
-        }
-        return !task.seriesId && task.repeat && task.repeat !== 'none'
-          ? { ...task, seriesId: task.id, occurrenceDate: date }
-          : task;
-      });
-      let outcomeUnknown = true;
+      let displayedTasks = Array.isArray(tasks) ? tasks : [];
+      let hasNewRecurrence = false;
+      let outcomeUnknown = false;
       try {
+        if (!Array.isArray(tasks) || tasks.some((task) => !task || typeof task !== 'object')) {
+          throw new Error('Dữ liệu công việc không hợp lệ.');
+        }
+
+        hasNewRecurrence = tasks.some((task) =>
+          !task.seriesId && task.repeat && task.repeat !== 'none'
+        );
+        displayedTasks = tasks.map((task) => {
+          if (
+            seriesUpdate &&
+            seriesUpdate.seriesId === task.seriesId &&
+            seriesUpdate.repeat === 'none'
+          ) {
+            const standaloneTask = { ...task };
+            delete standaloneTask.seriesId;
+            delete standaloneTask.occurrenceDate;
+            delete standaloneTask.repeatStartDate;
+            return {
+              ...standaloneTask,
+              id: seriesUpdate.seriesId,
+              repeat: 'none',
+              repeatUntil: null
+            };
+          }
+          return !task.seriesId && task.repeat && task.repeat !== 'none'
+            ? { ...task, seriesId: task.id, occurrenceDate: date }
+            : task;
+        });
+        outcomeUnknown = true;
         const response = await fetch(`/api/tasks/${date}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -1589,7 +1600,8 @@
         });
         if (!response.ok) {
           outcomeUnknown = response.status >= 500;
-          throw new Error(`HTTP ${response.status}`);
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `HTTP ${response.status}`);
         }
         outcomeUnknown = false;
         setDateTasks(date, displayedTasks);
