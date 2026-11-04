@@ -1315,42 +1315,82 @@
       setDayErrors((current) => ({ ...current, [date]: '' }));
     }
 
+    function tasksMatch(left, right) {
+      if (!Array.isArray(right) || left.length !== right.length) return false;
+      const comparableTasks = (tasks) => tasks
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          done: task.done,
+          startTime: task.startTime || null,
+          durationHours: task.durationHours ?? null,
+          durationMinutes: task.durationMinutes ?? null,
+          repeat: task.repeat || 'none',
+          repeatUntil: task.repeatUntil || null,
+          seriesId: task.seriesId || null,
+          occurrenceDate: task.occurrenceDate || null
+        }))
+        .sort((first, second) => first.id.localeCompare(second.id));
+      return JSON.stringify(comparableTasks(left)) === JSON.stringify(comparableTasks(right));
+    }
+
     async function saveTasks(date, tasks, seriesUpdate = null) {
       setSavingDates((current) => ({ ...current, [date]: true }));
       setDayErrors((current) => ({ ...current, [date]: '' }));
+      const hasNewRecurrence = tasks.some((task) =>
+        !task.seriesId && task.repeat && task.repeat !== 'none'
+      );
+      const displayedTasks = tasks.map((task) => {
+        if (seriesUpdate?.seriesId === task.seriesId && seriesUpdate.repeat === 'none') {
+          const standaloneTask = { ...task };
+          delete standaloneTask.seriesId;
+          delete standaloneTask.occurrenceDate;
+          delete standaloneTask.repeatStartDate;
+          return {
+            ...standaloneTask,
+            id: seriesUpdate.seriesId,
+            repeat: 'none',
+            repeatUntil: null
+          };
+        }
+        return !task.seriesId && task.repeat && task.repeat !== 'none'
+          ? { ...task, seriesId: task.id, occurrenceDate: date }
+          : task;
+      });
+      let outcomeUnknown = true;
       try {
         const response = await fetch(`/api/tasks/${date}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tasks, ...(seriesUpdate ? { seriesUpdate } : {}) })
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const hasNewRecurrence = tasks.some((task) =>
-          !task.seriesId && task.repeat && task.repeat !== 'none'
-        );
-        const displayedTasks = tasks.map((task) => {
-          if (seriesUpdate?.seriesId === task.seriesId && seriesUpdate.repeat === 'none') {
-            const standaloneTask = { ...task };
-            delete standaloneTask.seriesId;
-            delete standaloneTask.occurrenceDate;
-            delete standaloneTask.repeatStartDate;
-            return {
-              ...standaloneTask,
-              id: seriesUpdate.seriesId,
-              repeat: 'none',
-              repeatUntil: null
-            };
-          }
-          return !task.seriesId && task.repeat && task.repeat !== 'none'
-            ? { ...task, seriesId: task.id, occurrenceDate: date }
-            : task;
-        });
+        if (!response.ok) {
+          outcomeUnknown = response.status >= 500;
+          throw new Error(`HTTP ${response.status}`);
+        }
+        outcomeUnknown = false;
         setDateTasks(date, displayedTasks);
         if (seriesUpdate || hasNewRecurrence) {
           setRefreshToken((current) => current + 1);
         }
         return true;
-      } catch {
+      } catch (error) {
+        if (outcomeUnknown) {
+          try {
+            const saved = await apiRequest(`/api/tasks?month=${date.slice(0, 7)}`);
+            const savedTasks = saved.tasks?.[date];
+            if (tasksMatch(displayedTasks, savedTasks)) {
+              setDateTasks(date, savedTasks);
+              if (seriesUpdate || hasNewRecurrence) {
+                setRefreshToken((current) => current + 1);
+              }
+              return true;
+            }
+          } catch (verificationError) {
+            console.error('Không xác minh được trạng thái lưu lịch trình:', verificationError);
+          }
+        }
+        console.error('Không lưu được lịch trình:', error);
         setDayErrors((current) => ({ ...current, [date]: 'Chưa lưu được. Hãy thử lại.' }));
         return false;
       } finally {
