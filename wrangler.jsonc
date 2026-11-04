@@ -8,6 +8,16 @@
   // Ngày cố định phiên bản runtime của Workers
   "compatibility_date": "2026-10-12",
 
+  "workers_dev": true,
+  "preview_urls": false,
+
+  "routes": [
+    {
+      "pattern": "lichtrinh.pvdv.space",
+      "custom_domain": true
+    }
+  ],
+
   "triggers": {
     "crons": ["* * * * *"]
   },

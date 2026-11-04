@@ -487,6 +487,23 @@ const previousDate = (date) => {
   return `${String(year - 1).padStart(4, '0')}-12-31`;
 };
 
+const nextDate = (date) => {
+  const [year, month, day] = date.split('-').map(Number);
+  if (day < daysInMonth(year, month)) {
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}`;
+  }
+  if (month < 12) {
+    return `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-01`;
+  }
+  return `${String(year + 1).padStart(4, '0')}-01-01`;
+};
+
+const timeToMinutes = (time) => {
+  if (typeof time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
 const recurrenceStartCutoff = (year, month) =>
   `${String(Math.max(1, year - MAX_RECURRENCE_YEARS)).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
 
@@ -1653,18 +1670,35 @@ async function sendZaloReminders(env) {
   const now = vietnamDateTime(new Date());
   for (const link of links) {
     try {
-      const tasks = (await getTasksForDate(env.DB, link.username, now.date))
-        .filter((task) => !task.done);
+      const tomorrow = nextDate(now.date);
+      const [todayTasks, tomorrowTasks] = await Promise.all([
+        getTasksForDate(env.DB, link.username, now.date),
+        getTasksForDate(env.DB, link.username, tomorrow)
+      ]);
+      const tasks = todayTasks.filter((task) => !task.done);
       if (link.task_reminders_enabled) {
-        const dueTasks = tasks.filter((task) => task.startTime === now.time);
-        for (const task of dueTasks) {
-          const deliveryKey = `task:${now.date}:${task.id}:${now.time}`;
+        const nowMinutes = timeToMinutes(now.time);
+        const reminderTasks = [
+          ...todayTasks.map((task) => ({ task, date: now.date })),
+          ...tomorrowTasks.map((task) => ({ task, date: tomorrow }))
+        ].filter(({ task, date }) => {
+          if (task.done) return false;
+          const startMinutes = timeToMinutes(task.startTime);
+          if (startMinutes == null || nowMinutes == null) return false;
+          const reminderMinutes = startMinutes - 5;
+          const targetMinutes = date === now.date
+            ? reminderMinutes
+            : 1440 + reminderMinutes;
+          return targetMinutes === nowMinutes;
+        });
+        for (const { task, date } of reminderTasks) {
+          const deliveryKey = `task:${date}:${task.id}:${task.startTime}`;
           if (!await claimZaloDelivery(env.DB, link.username, deliveryKey)) continue;
           try {
             await sendZaloMessage(
               env,
               link.chat_id,
-              `⏰ Nhắc lịch ${now.time}\n${task.title}`
+              `⏰ Nhắc lịch ${task.startTime} (trước 5 phút)\n${task.title}`
             );
           } catch (error) {
             await releaseZaloDelivery(env.DB, link.username, deliveryKey);

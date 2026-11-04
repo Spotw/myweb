@@ -862,8 +862,8 @@
             }))
           }),
           h('span', null,
-            h('strong', null, 'Nhắc từng công việc đúng giờ'),
-            h('small', null, 'Gửi tin nhắn khi đến giờ bắt đầu của công việc chưa hoàn thành.')
+            h('strong', null, 'Nhắc từng công việc trước 5 phút'),
+            h('small', null, 'Gửi tin nhắn trước 5 phút so với giờ bắt đầu của công việc chưa hoàn thành.')
           )
         ),
         h('label', { className: 'zalo-option' },
