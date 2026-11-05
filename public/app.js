@@ -32,6 +32,22 @@
     return `${targetYear}-${pad(month)}-${pad(Math.min(day, lastDay))}`;
   };
 
+  function sortTasksByStartTime(tasks) {
+    return tasks
+      .map((task, index) => ({ task, index }))
+      .sort((first, second) => {
+        const firstTime = first.task.startTime;
+        const secondTime = second.task.startTime;
+
+        if (!firstTime && !secondTime) return first.index - second.index;
+        if (!firstTime) return -1;
+        if (!secondTime) return 1;
+
+        return firstTime.localeCompare(secondTime) || first.index - second.index;
+      })
+      .map(({ task }) => task);
+  }
+
   function julianDay(day, month, year) {
     const adjustedMonth = Math.floor((14 - month) / 12);
     const adjustedYear = year + 4800 - adjustedMonth;
@@ -156,7 +172,7 @@
       ? { body: '#eebb5e', detail: '#de9d45', inner: '#eb9b8e', eye: '#353d32' }
       : animal === 'fish'
         ? { body: '#72a9a0', detail: '#4d827d', inner: '#f0a477', eye: '#263a2d' }
-        : { body: '#fffaf0', detail: '#fffaf0', inner: '#eb9b8e', eye: '#353d32' };
+        : { body: '#fffaf0', detail: '#e14885', inner: '#eb9b8e', eye: '#353d32' };
     let animalParts;
 
     if (animal === 'fish') {
@@ -863,7 +879,7 @@
           }),
           h('span', null,
             h('strong', null, 'Nhắc từng công việc trước 5 phút'),
-            h('small', null, 'Gửi tin nhắn trước 5 phút so với giờ bắt đầu của công việc chưa hoàn thành.')
+            h('small', null, 'Gửi tin nhắn trước 5 phút đối với công việc có thời gian bắt đầu.')
           )
         ),
         h('label', { className: 'zalo-option' },
@@ -1358,6 +1374,7 @@
     const completeCount = monthTasks.filter((task) => task.done).length;
     const pendingCount = monthTasks.length - completeCount;
     const selectedTasks = tasksByDate[activeDate] || [];
+    const sortedSelectedTasks = sortTasksByStartTime(selectedTasks);
     const editingTask = selectedTasks.find((task) => task.id === editingTaskId);
     const editingRecurringTask = Boolean(editingTask?.seriesId);
 
@@ -1831,8 +1848,9 @@
               const date = dateKey(year, month, day);
               const lunarDate = toLunarDate(day, month + 1, year);
               const tasks = tasksByDate[date] || [];
+              const sortedTasks = sortTasksByStartTime(tasks);
               const isToday = date === todayKey;
-              const visibleTasks = tasks.slice(0, 2);
+              const visibleTasks = sortedTasks.slice(0, 2);
               const extraTasks = tasks.length - visibleTasks.length;
 
               return h('section', {
@@ -1952,7 +1970,7 @@
       dayErrors[activeDate] && h('p', { className: 'dialog-error', role: 'alert' }, dayErrors[activeDate]),
       selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
         h('h3', null, `Việc trong ngày này (${selectedTasks.length})`),
-        selectedTasks.map((task) => h('div', {
+        sortedSelectedTasks.map((task) => h('div', {
           className: `dialog-task${task.done ? ' is-done' : ''}`,
           key: task.id
         },
@@ -2022,14 +2040,14 @@
           className: 'task-input',
           type: 'text',
           maxLength: MAX_TASK_TITLE_LENGTH,
-          placeholder: 'Ví dụ: Họp nhóm lúc 10 giờ',
+          placeholder: 'Ví dụ: Làm báo cáo',
           value: newTitle,
           onChange: (event) => setNewTitle(event.target.value),
           required: true
         }),
         h('div', { className: 'task-options' },
           h('label', { className: 'task-option' },
-            h('span', null, 'Thời gian bắt đầu'),
+            h('span', null, 'Bắt đầu từ'),
             h('input', {
               className: 'task-input task-option-input',
               type: 'time',
@@ -2112,7 +2130,7 @@
         ),
         repeat !== 'none' && (!editingRecurringTask || editScope === 'series') &&
           h('p', { className: 'repeat-note' },
-            'Ngày kết thúc lặp không được quá 5 năm kể từ ngày bắt đầu.'
+            'Ngày kết thúc lặp không quá 5 năm kể từ ngày bắt đầu.'
           ),
         h('div', { className: 'dialog-footer' },
           h('span', { className: 'input-counter' }, `${newTitle.length}/${MAX_TASK_TITLE_LENGTH}`),

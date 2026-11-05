@@ -1434,14 +1434,14 @@ async function handleZaloWebhook(request, env) {
       'SELECT username FROM zalo_bot_links WHERE chat_id = ?'
     ).bind(chatId).first();
     if (currentLink?.username === pendingLink.username) {
-      await sendZaloMessage(env, chatId, 'Đã liên kết thành công. Bạn sẽ nhận nhắc lịch qua bot này.');
+      await sendZaloMessage(env, chatId, 'Đã liên kết thành công rồi ní. Bạn sẽ nhận nhắc lịch qua bot này.');
       return json({ ok: true });
     }
     await sendZaloMessage(env, chatId, 'Mã liên kết không hợp lệ hoặc đã được sử dụng. Hãy tạo mã mới.');
     return json({ ok: true });
   }
 
-  await sendZaloMessage(env, chatId, 'Đã liên kết thành công. Bạn sẽ nhận nhắc lịch qua bot này.');
+  await sendZaloMessage(env, chatId, 'Đã liên kết thành công rồi ní. Bạn sẽ nhận nhắc lịch qua bot này.');
   return json({ ok: true });
 }
 
@@ -1698,7 +1698,7 @@ async function sendZaloReminders(env) {
             await sendZaloMessage(
               env,
               link.chat_id,
-              `⏰ Nhắc lịch ${task.startTime} (trước 5 phút)\n${task.title}`
+              `⏰ Còn 5 phút nữa là phải làm rồi đó ní.\n Công việc lúc ${task.startTime}: ${task.title}`
             );
           } catch (error) {
             await releaseZaloDelivery(env.DB, link.username, deliveryKey);
@@ -1715,12 +1715,12 @@ async function sendZaloReminders(env) {
             ? tasks.map((task) =>
               `• ${task.startTime ? `${task.startTime} ` : ''}${task.title.slice(0, 72)}`
             )
-            : ['Hôm nay bạn chưa có lịch trình cần thực hiện.'];
+            : ['Hôm nay ní chưa có lịch trình cần thực hiện.'];
           try {
             await sendZaloMessage(
               env,
               link.chat_id,
-              `📅 Lịch trình hôm nay\n${lines.join('\n')}`
+              `Chúc ní một ngày tốt lành.\n📅 Lịch trình hôm nay\n${lines.join('\n')}`
             );
           } catch (error) {
             await releaseZaloDelivery(env.DB, link.username, deliveryKey);
