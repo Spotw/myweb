@@ -1698,7 +1698,7 @@ async function sendZaloReminders(env) {
             await sendZaloMessage(
               env,
               link.chat_id,
-              `⏰ Còn 5 phút nữa là phải làm rồi đó ní.\n Công việc lúc ${task.startTime}: ${task.title}`
+              `❗️ Còn 5 phút nữa là phải làm rồi đó ní!!!\n⏰ Công việc lúc ${task.startTime}: ${task.title}`
             );
           } catch (error) {
             await releaseZaloDelivery(env.DB, link.username, deliveryKey);
@@ -1715,12 +1715,12 @@ async function sendZaloReminders(env) {
             ? tasks.map((task) =>
               `• ${task.startTime ? `${task.startTime} ` : ''}${task.title.slice(0, 72)}`
             )
-            : ['Hôm nay ní chưa có lịch trình cần thực hiện.'];
+            : ['Hôm nay chưa có lịch nghen!'];
           try {
             await sendZaloMessage(
               env,
               link.chat_id,
-              `Chúc ní một ngày tốt lành.\n📅 Lịch trình hôm nay\n${lines.join('\n')}`
+              `✨Chúc ní một ngày tốt lành✨\n📅 Lịch trình hôm nay\n${lines.join('\n')}`
             );
           } catch (error) {
             await releaseZaloDelivery(env.DB, link.username, deliveryKey);
