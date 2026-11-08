@@ -808,8 +808,16 @@ function parseEntryFields(body) {
     entry[field] = value.trim();
     if (entry[field].length > limit) return null;
   }
+  entry.loai_thong_tin = normalizeEntryType(entry.loai_thong_tin);
   if (!entry.mo_ta || !entry.loai_thong_tin) return null;
   return entry;
+}
+
+function normalizeEntryType(value) {
+  const normalized = value.trim().toLocaleLowerCase('vi');
+  if (!normalized) return '';
+  const [firstCharacter, ...remainingCharacters] = Array.from(normalized);
+  return firstCharacter.toLocaleUpperCase('vi') + remainingCharacters.join('');
 }
 
 async function getEntryUploadQuota(db, username, year) {

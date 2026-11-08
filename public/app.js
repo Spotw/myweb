@@ -18,6 +18,12 @@
   const MIN_PASSWORD_LENGTH = 8;
   const LUNAR_TIME_ZONE = 7;
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
+  const normalizeEntryType = (value) => {
+    const normalized = value.trim().toLocaleLowerCase('vi');
+    if (!normalized) return '';
+    const [firstCharacter, ...remainingCharacters] = Array.from(normalized);
+    return firstCharacter.toLocaleUpperCase('vi') + remainingCharacters.join('');
+  };
   const pad = (value) => String(value).padStart(2, '0');
   const dateKey = (year, month, day) => `${year}-${pad(month + 1)}-${pad(day)}`;
   const formatFileSize = (bytes) => bytes < 1000
@@ -346,10 +352,10 @@
 
     useEffect(() => { loadEntries(); }, []);
 
-    const categories = [...new Set(entries.map((entry) => entry.loai_thong_tin))];
+    const categories = [...new Set(entries.map((entry) => normalizeEntryType(entry.loai_thong_tin)).filter(Boolean))];
     const normalizedQuery = query.trim().toLocaleLowerCase('vi');
     const filteredEntries = entries.filter((entry) => {
-      const matchesCategory = category === 'Tất cả' || entry.loai_thong_tin === category;
+      const matchesCategory = category === 'Tất cả' || normalizeEntryType(entry.loai_thong_tin) === category;
       const matchesQuery = !normalizedQuery ||
         `${entry.mo_ta} ${entry.loai_thong_tin} ${entry.noi_dung} ${entry.file_name || ''}`
           .toLocaleLowerCase('vi').includes(normalizedQuery);
@@ -388,7 +394,8 @@
       let uploadToken = null;
       try {
         const entryFields = {
-          ...form
+          ...form,
+          loai_thong_tin: normalizeEntryType(form.loai_thong_tin)
         };
         if (selectedFile) {
           const upload = await apiRequest('/api/entries/uploads', {
@@ -574,7 +581,7 @@
                         key: entry.id
                       },
                       h('div', { className: 'portal-entry-heading' },
-                        h('span', { className: 'portal-entry-category' }, entry.loai_thong_tin),
+                        h('span', { className: 'portal-entry-category' }, normalizeEntryType(entry.loai_thong_tin)),
                         view === 'trash'
                           ? h('div', { className: 'portal-entry-meta' },
                               h('time', null, `Đã xóa ${entry.deleted_at}`),
@@ -626,10 +633,17 @@
               h('input', {
                 id: 'entry-category',
                 value: form.loai_thong_tin,
+                list: 'entry-category-options',
                 onChange: (event) => setForm((current) => ({ ...current, loai_thong_tin: event.target.value })),
+                onBlur: () => setForm((current) => ({
+                  ...current,
+                  loai_thong_tin: normalizeEntryType(current.loai_thong_tin)
+                })),
                 maxLength: 100,
                 required: true
               }),
+              h('datalist', { id: 'entry-category-options' },
+                categories.map((name) => h('option', { value: name, key: name }))),
               h('label', { htmlFor: 'entry-description' }, 'Mô tả ngắn'),
               h('input', {
                 id: 'entry-description',
