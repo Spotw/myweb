@@ -14,6 +14,10 @@ const ZALO_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const ZALO_WEBHOOK_PATH = '/api/zalo/webhook';
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
 const ENTRY_UPLOAD_QUOTA_BYTES = 500 * 1000 * 1000;
+const ENTRY_MAX_FILE_SIZE = 10 * 1000 * 1000;
+const ENTRY_ALLOWED_FILE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'mp4', 'mov', 'docx', 'pptx', 'doc', 'xlsx', 'xls', 'pdf', 'rar', 'ps1', 'cmd'
+]);
 const ENTRY_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -872,13 +876,16 @@ async function handleEntries(request, db, bucket, username, pathname) {
       ? body.file_content_type
       : 'application/octet-stream';
     const fileSize = body?.file_size;
+    const extension = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
     const entryId = body?.entry_id ?? null;
     if (!entry) {
       return json({ error: 'Vui lòng nhập mô tả, loại thông tin và nội dung hợp lệ.' }, 400);
     }
-    if (!fileName || !Number.isSafeInteger(fileSize) || fileSize < 1 ||
-      fileSize > ENTRY_UPLOAD_QUOTA_BYTES) {
-      return json({ error: 'Tệp không hợp lệ hoặc vượt quá 500 MB.' }, 400);
+    if (!fileName || !ENTRY_ALLOWED_FILE_EXTENSIONS.has(extension)) {
+      return json({ error: 'Định dạng tệp không được hỗ trợ. Chỉ cho phép JPG, JPEG, PNG, MP4, MOV, DOCX, PPTX, DOC, XLSX, XLS, PDF, RAR, PS1 và CMD.' }, 400);
+    }
+    if (!Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > ENTRY_MAX_FILE_SIZE) {
+      return json({ error: 'Kích thước tệp không hợp lệ hoặc vượt quá 10 MB mỗi lần tải lên.' }, 400);
     }
     if (entryId !== null && (!Number.isSafeInteger(entryId) || entryId < 1)) {
       return json({ error: 'Mã thông tin không hợp lệ.' }, 400);

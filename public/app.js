@@ -16,6 +16,11 @@
   const MAX_TASKS_PER_DAY = 20;
   const MAX_TASK_TITLE_LENGTH = 100;
   const MIN_PASSWORD_LENGTH = 8;
+  const ENTRY_MAX_FILE_SIZE = 10 * 1000 * 1000;
+  const ENTRY_ALLOWED_FILE_EXTENSIONS = new Set([
+    'jpg', 'jpeg', 'png', 'mp4', 'mov', 'docx', 'pptx', 'doc', 'xlsx', 'xls', 'pdf', 'rar', 'ps1', 'cmd'
+  ]);
+  const ENTRY_FILE_ACCEPT = '.jpg,.jpeg,.png,.mp4,.mov,.docx,.pptx,.doc,.xlsx,.xls,.pdf,.rar,.ps1,.cmd';
   const LUNAR_TIME_ZONE = 7;
   const { createElement: h, useEffect, useMemo, useRef, useState } = React;
   const normalizeEntryType = (value) => {
@@ -509,6 +514,26 @@
       }
     }
 
+    function selectEntryFile(event) {
+      const file = event.target.files?.[0] || null;
+      const extension = file?.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+      if (file && !ENTRY_ALLOWED_FILE_EXTENSIONS.has(extension)) {
+        setSelectedFile(null);
+        setNotice({ type: 'error', text: 'Định dạng tệp không được hỗ trợ. Vui lòng chọn JPG, JPEG, PNG, MP4, MOV, DOCX, PPTX, DOC, XLSX, XLS, PDF, RAR, PS1 hoặc CMD.' });
+        event.target.value = '';
+        return;
+      }
+      if (file && file.size > ENTRY_MAX_FILE_SIZE) {
+        setSelectedFile(null);
+        setNotice({ type: 'error', text: 'Tệp tải lên không được vượt quá 10 MB.' });
+        event.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+      setRemoveExistingFile(false);
+      setNotice(null);
+    }
+
     return h('main', { className: 'page-shell portal-shell' },
       h('div', { className: 'container' },
         h('section', { className: 'portal-intro' },
@@ -665,10 +690,8 @@
                   className: 'portal-file-input',
                   id: 'entry-file',
                   type: 'file',
-                  onChange: (event) => {
-                    setSelectedFile(event.target.files?.[0] || null);
-                    setRemoveExistingFile(false);
-                  },
+                  accept: ENTRY_FILE_ACCEPT,
+                  onChange: selectEntryFile,
                   disabled: saving,
                   tabIndex: -1,
                   'aria-label': 'Chọn tệp tải lên'
@@ -685,6 +708,9 @@
                 rows: 6,
                 disabled: saving
               }),
+              h('p', { className: 'portal-quota-note' },
+                'Tệp cho phép: JPG, JPEG, PNG, MP4, MOV, DOCX, PPTX, DOC, XLSX, XLS, PDF, RAR, PS1, CMD. Tối đa 10 MB mỗi tệp.'
+              ),
               editingEntry?.file_name && !removeExistingFile && h('div', {
                 className: 'portal-current-file'
               },
