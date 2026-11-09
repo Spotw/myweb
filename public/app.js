@@ -36,13 +36,6 @@
     : bytes >= 1000 * 1000
     ? `${(bytes / (1000 * 1000)).toFixed(1)} MB`
     : `${Math.ceil(bytes / 1000)} KB`;
-  const dateAfterYears = (date, years) => {
-    const [year, month, day] = date.split('-').map(Number);
-    const targetYear = year + years;
-    const lastDay = new Date(targetYear, month, 0).getDate();
-    return `${targetYear}-${pad(month)}-${pad(Math.min(day, lastDay))}`;
-  };
-
   function sortTasksByStartTime(tasks) {
     return tasks
       .map((task, index) => ({ task, index }))
@@ -1696,7 +1689,7 @@
       setDurationHours('');
       setDurationMinutes('');
       setRepeat('none');
-      setRepeatUntil(dateAfterYears(date, 5));
+      setRepeatUntil('');
       setEditingTaskId('');
       setEditScope('occurrence');
       setActiveDate(date);
@@ -1709,7 +1702,7 @@
       setDurationHours(task.durationHours == null ? '' : String(task.durationHours));
       setDurationMinutes(task.durationMinutes == null ? '' : String(task.durationMinutes));
       setRepeat(task.repeat || 'none');
-      setRepeatUntil(task.repeatUntil || dateAfterYears(task.repeatStartDate || activeDate, 5));
+      setRepeatUntil(task.repeatUntil || '');
       setEditScope('occurrence');
     }
 
@@ -1744,7 +1737,7 @@
           : repeat,
         repeatUntil: editingRecurringTask && editScope === 'occurrence'
           ? editingTask.repeatUntil
-          : repeat === 'none' ? null : repeatUntil
+          : repeat === 'none' ? null : (repeatUntil || null)
       };
 
       if (editingTask) {
@@ -2149,28 +2142,25 @@
             ),
           repeat !== 'none' && (editingRecurringTask && editScope === 'occurrence'
             ? h('p', { className: 'repeat-readonly repeat-until-readonly' },
-              `Lặp lại đến ${editingTask.repeatUntil.split('-').reverse().join('/')}`
+              editingTask.repeatUntil
+                ? `Lặp lại đến ${editingTask.repeatUntil.split('-').reverse().join('/')}`
+                : 'Lặp lại không thời hạn'
             )
             : h('label', { className: 'task-option' },
-              h('span', null, 'Lặp lại đến'),
+              h('span', null, 'Lặp lại đến (tùy chọn)'),
               h('input', {
                 className: 'task-input task-option-input',
                 type: 'date',
                 min: activeDate,
-                max: dateAfterYears(
-                  editingRecurringTask ? editingTask.repeatStartDate : activeDate,
-                  5
-                ),
                 value: repeatUntil,
                 onChange: (event) => setRepeatUntil(event.target.value),
-                required: true,
                 'aria-label': 'Ngày kết thúc lặp lại'
               })
             ))
         ),
         repeat !== 'none' && (!editingRecurringTask || editScope === 'series') &&
           h('p', { className: 'repeat-note' },
-            'Ngày kết thúc lặp không quá 5 năm kể từ ngày bắt đầu.'
+            'Bỏ trống để lịch lặp lại không thời hạn.'
           ),
         h('div', { className: 'dialog-footer' },
           h('span', { className: 'input-counter' }, `${newTitle.length}/${MAX_TASK_TITLE_LENGTH}`),

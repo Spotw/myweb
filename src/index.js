@@ -2,7 +2,6 @@ const DAY_COUNT = 7;
 const MAX_LENGTH = 5000;
 const MAX_TASKS_PER_DAY = 20;
 const MAX_TASK_TITLE_LENGTH = 100;
-const MAX_RECURRENCE_YEARS = 5;
 const RECURRENCE_FREQUENCIES = new Set(['none', 'daily', 'weekly', 'monthly', 'yearly']);
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_COOKIE = 'myweb_session';
@@ -469,14 +468,6 @@ async function handleAuth(request, env, pathname) {
   return null;
 }
 
-const addYearsToDate = (date, years) => {
-  const [year, month, day] = date.split('-').map(Number);
-  const targetYear = Math.min(9999, year + years);
-  return `${String(targetYear).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(
-    Math.min(day, daysInMonth(targetYear, month))
-  ).padStart(2, '0')}`;
-};
-
 const previousDate = (date) => {
   const [year, month, day] = date.split('-').map(Number);
   if (day > 1) {
@@ -508,12 +499,10 @@ const timeToMinutes = (time) => {
   return hours * 60 + minutes;
 };
 
-const recurrenceStartCutoff = (year, month) =>
-  `${String(Math.max(1, year - MAX_RECURRENCE_YEARS)).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+const recurrenceStartCutoff = () => '0001-01-01';
 
 function isRecurrenceDate(startDate, repeat, date, repeatUntil = null) {
-  const maximumEndDate = addYearsToDate(startDate, MAX_RECURRENCE_YEARS);
-  const endDate = repeatUntil && repeatUntil < maximumEndDate ? repeatUntil : maximumEndDate;
+  const endDate = repeatUntil || '9999-12-31';
   if (date < startDate || date > endDate) return false;
   const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
   const [year, month, day] = date.split('-').map(Number);
@@ -601,7 +590,7 @@ async function handleSchedule(request, db, username, pathname, url) {
       const occurrenceStart = series.start_date > firstKey ? series.start_date : firstKey;
       for (let day = Number(occurrenceStart.slice(8, 10)); day <= days; day += 1) {
         const date = `${month}-${String(day).padStart(2, '0')}`;
-        if (!isRecurrenceDate(series.start_date, task.repeat, date)) continue;
+        if (!isRecurrenceDate(series.start_date, task.repeat, date, task.repeatUntil)) continue;
         const override = overridesByOccurrence.get(`${series.id}:${date}`);
         if (override?.canceled) continue;
         tasksByDate[date].push({
@@ -612,7 +601,7 @@ async function handleSchedule(request, db, username, pathname, url) {
           occurrenceDate: date,
           repeat: task.repeat,
           repeatStartDate: series.start_date,
-          repeatUntil: task.repeatUntil || addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS)
+          repeatUntil: task.repeatUntil || null
         });
       }
     }
@@ -677,18 +666,25 @@ async function handleSchedule(request, db, username, pathname, url) {
           : (seriesUpdate.repeat || master.repeat),
         repeatUntil: endingSeries
           ? (date > results[0].start_date ? previousDate(date) : null)
-          : (seriesUpdate.repeatUntil || master.repeatUntil || addYearsToDate(results[0].start_date, MAX_RECURRENCE_YEARS))
+          : (seriesUpdate.repeatUntil || master.repeatUntil || null)
       };
-      if (!endingSeries && (
+      if (!endingSeries && updatedMaster.repeatUntil && (
         updatedMaster.repeatUntil < date ||
-        updatedMaster.repeatUntil < results[0].start_date ||
-        updatedMaster.repeatUntil > addYearsToDate(results[0].start_date, MAX_RECURRENCE_YEARS)
+        updatedMaster.repeatUntil < results[0].start_date
       )) {
-        return json({ error: 'Ngày kết thúc lặp phải nằm trong vòng 5 năm kể từ ngày bắt đầu.' }, 400);
+        return json({ error: 'Ngày kết thúc lặp phải từ ngày bắt đầu trở đi.' }, 400);
       }
-      await db.prepare(
-        `UPDATE "${recurrenceTable}" SET task = ? WHERE id = ?`
-      ).bind(JSON.stringify(updatedMaster), seriesUpdate.seriesId).run();
+      if (endingSeries && date <= results[0].start_date) {
+        // The series has no occurrences before the edited date. Remove it
+        // instead of leaving an invalid recurrence row with repeat: "none".
+        await db.prepare(
+          `DELETE FROM "${recurrenceTable}" WHERE id = ?`
+        ).bind(seriesUpdate.seriesId).run();
+      } else {
+        await db.prepare(
+          `UPDATE "${recurrenceTable}" SET task = ? WHERE id = ?`
+        ).bind(JSON.stringify(updatedMaster), seriesUpdate.seriesId).run();
+      }
       await db.prepare(
         `DELETE FROM "${overrideTable}" WHERE series_id = ? AND date >= ?`
       ).bind(seriesUpdate.seriesId, date).run();
@@ -704,8 +700,7 @@ async function handleSchedule(request, db, username, pathname, url) {
       const storedTask = JSON.parse(series.task);
       const task = {
         ...storedTask,
-        repeatUntil: storedTask.repeatUntil ||
-          addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS)
+        repeatUntil: storedTask.repeatUntil || null
       };
       if (isRecurrenceDate(series.start_date, task.repeat, date, task.repeatUntil)) {
         activeSeries.set(series.id, { ...series, task });
@@ -735,9 +730,9 @@ async function handleSchedule(request, db, username, pathname, url) {
         continue;
       }
       if (task.repeat && task.repeat !== 'none') {
-        const repeatUntil = task.repeatUntil || addYearsToDate(date, MAX_RECURRENCE_YEARS);
-        if (repeatUntil < date || repeatUntil > addYearsToDate(date, MAX_RECURRENCE_YEARS)) {
-          return json({ error: 'Ngày kết thúc lặp phải nằm trong vòng 5 năm kể từ ngày bắt đầu.' }, 400);
+        const repeatUntil = task.repeatUntil || null;
+        if (repeatUntil && repeatUntil < date) {
+          return json({ error: 'Ngày kết thúc lặp phải từ ngày bắt đầu trở đi.' }, 400);
         }
         const recurringTask = { ...task, repeatUntil, done: false };
         await db.prepare(
@@ -1610,7 +1605,7 @@ async function getTasksForDate(db, username, date) {
     if (!isValidTaskList([task]) || !RECURRENCE_FREQUENCIES.has(task.repeat) || task.repeat === 'none') {
       throw new Error(`Dữ liệu lặp lại không hợp lệ: ${series.id}`);
     }
-    const repeatUntil = task.repeatUntil || addYearsToDate(series.start_date, MAX_RECURRENCE_YEARS);
+    const repeatUntil = task.repeatUntil || null;
     if (!isRecurrenceDate(series.start_date, task.repeat, date, repeatUntil)) continue;
     const override = overridesBySeries.get(series.id);
     if (override?.canceled) continue;
