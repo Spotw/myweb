@@ -2147,11 +2147,12 @@
                 : 'Lặp lại không thời hạn'
             )
             : h('label', { className: 'task-option' },
-              h('span', null, 'Lặp lại đến (tùy chọn)'),
+              h('span', null, 'Lặp lại tới'),
               h('input', {
                 className: 'task-input task-option-input',
                 type: 'date',
                 min: activeDate,
+                required: true,
                 value: repeatUntil,
                 onChange: (event) => setRepeatUntil(event.target.value),
                 'aria-label': 'Ngày kết thúc lặp lại'
@@ -2160,7 +2161,7 @@
         ),
         repeat !== 'none' && (!editingRecurringTask || editScope === 'series') &&
           h('p', { className: 'repeat-note' },
-            'Bỏ trống để lịch lặp lại không thời hạn.'
+            'Vui lòng chọn ngày kết thúc lặp lại.'
           ),
         h('div', { className: 'dialog-footer' },
           h('span', { className: 'input-counter' }, `${newTitle.length}/${MAX_TASK_TITLE_LENGTH}`),

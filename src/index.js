@@ -640,6 +640,12 @@ async function handleSchedule(request, db, username, pathname, url) {
     }
 
     const date = `${year}-${month}-${day}`;
+    if (
+      body.tasks.some((task) => !task.seriesId && task.repeat && task.repeat !== 'none' && !task.repeatUntil) ||
+      (seriesUpdate && seriesUpdate.repeat !== 'none' && !seriesUpdate.repeatUntil)
+    ) {
+      return json({ error: 'Vui lòng chọn ngày kết thúc lặp lại.' }, 400);
+    }
     const { table, recurrenceTable, overrideTable } = await ensureScheduleTables(db, username);
     const seriesIdsInBody = new Set(
       body.tasks.filter((task) => task.seriesId).map((task) => task.seriesId)
