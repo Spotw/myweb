@@ -589,7 +589,127 @@ const sameTaskDetails = (left, right) => {
   return Object.keys(leftDetails).every((key) => leftDetails[key] === rightDetails[key]);
 };
 
+async function moveScheduledTask(request, db, username) {
+  const body = await readJson(request);
+  const validDateKey = (date) => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+    isValidDate(...date.split('-').map(Number));
+  if (!body || !validDateKey(body.sourceDate) || !validDateKey(body.targetDate) ||
+    body.sourceDate === body.targetDate || typeof body.taskId !== 'string' ||
+    !['occurrence', 'series'].includes(body.scope) ||
+    !isValidTaskList([{ ...body.details, id: body.taskId, done: false }])) {
+    return json({ error: 'Ngày hoặc thông tin lịch trình không hợp lệ.' }, 400);
+  }
+  const { sourceDate, targetDate, taskId, scope } = body;
+  const { table, recurrenceTable, overrideTable } = await ensureScheduleTables(db, username);
+  const sourceTasks = await getTasksForDate(db, username, sourceDate);
+  const original = sourceTasks.find((task) => task.id === taskId);
+  if (!original) return json({ error: 'Lịch trình không còn tồn tại. Hãy tải lại lịch.' }, 404);
+  const targetTasks = await getTasksForDate(db, username, targetDate);
+  const otherTargetTasks = original.seriesId && scope === 'series'
+    ? targetTasks.filter((task) => task.seriesId !== original.seriesId)
+    : targetTasks;
+  if (otherTargetTasks.length >= MAX_TASKS_PER_DAY) {
+    return json({ error: 'Ngày được chọn đã đủ 20 công việc.' }, 400);
+  }
+  const updated = { ...taskDetails({ ...original, ...body.details }), id: taskId, done: original.done };
+  const movingOccurrence = original.seriesId && scope === 'occurrence';
+  if (movingOccurrence) {
+    updated.id = crypto.randomUUID();
+    updated.repeat = 'none';
+    updated.repeatUntil = null;
+  }
+  if (updated.repeat !== 'none' && (!updated.repeatUntil || updated.repeatUntil < targetDate)) {
+    return json({ error: 'Ngày kết thúc lặp phải từ ngày được chọn trở đi.' }, 400);
+  }
+  const statements = [];
+  const readRegularTasks = async (date) => {
+    const row = await db.prepare(`SELECT tasks FROM "${table}" WHERE date = ?`).bind(date).first();
+    return row ? JSON.parse(row.tasks) : [];
+  };
+  const writeRegularTasks = (date, tasks) => db.prepare(
+    `INSERT INTO "${table}" (date, tasks) VALUES (?, ?)
+     ON CONFLICT(date) DO UPDATE SET tasks = excluded.tasks`
+  ).bind(date, JSON.stringify(tasks));
+
+  if (original.seriesId && scope === 'series') {
+    const series = await db.prepare(
+      `SELECT start_date, task FROM "${recurrenceTable}" WHERE id = ?`
+    ).bind(original.seriesId).first();
+    if (!series) return json({ error: 'Chuỗi lịch trình không còn tồn tại.' }, 404);
+    if (updated.repeat === 'none') {
+      // Keep earlier occurrences, matching the existing stop-repeating action.
+      if (sourceDate <= series.start_date) {
+        statements.push(db.prepare(`DELETE FROM "${recurrenceTable}" WHERE id = ?`).bind(original.seriesId));
+      } else {
+        const master = { ...JSON.parse(series.task), repeatUntil: previousDate(sourceDate) };
+        statements.push(db.prepare(`UPDATE "${recurrenceTable}" SET task = ? WHERE id = ?`)
+          .bind(JSON.stringify(master), original.seriesId));
+      }
+      statements.push(db.prepare(`DELETE FROM "${overrideTable}" WHERE series_id = ? AND date >= ?`)
+        .bind(original.seriesId, sourceDate));
+      updated.id = crypto.randomUUID();
+      const regular = await readRegularTasks(targetDate);
+      statements.push(writeRegularTasks(targetDate, [...regular, updated]));
+    } else {
+      const offset = (Date.parse(targetDate) - Date.parse(sourceDate)) / 86400000;
+      const shiftDate = (date) => {
+        const shifted = new Date(Date.parse(date) + offset * 86400000).toISOString().slice(0, 10);
+        return validDateKey(shifted) ? shifted : null;
+      };
+      const newStart = shiftDate(series.start_date);
+      const { results: overrides } = await db.prepare(
+        `SELECT date, task, canceled FROM "${overrideTable}" WHERE series_id = ?`
+      ).bind(original.seriesId).all();
+      if (!newStart || newStart > updated.repeatUntil || overrides.some((row) => !shiftDate(row.date))) {
+        return json({ error: 'Ngày mới nằm ngoài phạm vi lịch hợp lệ.' }, 400);
+      }
+      const master = { ...updated, id: original.seriesId, done: false };
+      statements.push(db.prepare(`UPDATE "${recurrenceTable}" SET start_date = ?, task = ? WHERE id = ?`)
+        .bind(newStart, JSON.stringify(master), original.seriesId));
+      statements.push(db.prepare(`DELETE FROM "${overrideTable}" WHERE series_id = ?`).bind(original.seriesId));
+      for (const row of overrides) {
+        const oldMaster = taskDetails(JSON.parse(series.task));
+        const savedOverride = row.task ? JSON.parse(row.task) : null;
+        const override = savedOverride ? { ...master } : null;
+        if (override) {
+          for (const key of ['title', 'done', 'startTime', 'durationHours', 'durationMinutes']) {
+            if (savedOverride[key] !== oldMaster[key]) override[key] = savedOverride[key];
+          }
+        }
+        statements.push(db.prepare(`INSERT INTO "${overrideTable}" (series_id, date, task, canceled) VALUES (?, ?, ?, ?)`)
+          .bind(original.seriesId, shiftDate(row.date), override ? JSON.stringify(override) : null, row.canceled));
+      }
+    }
+  } else {
+    if (movingOccurrence) {
+      statements.push(db.prepare(
+        `INSERT INTO "${overrideTable}" (series_id, date, task, canceled) VALUES (?, ?, NULL, 1)
+         ON CONFLICT(series_id, date) DO UPDATE SET task = NULL, canceled = 1`
+      ).bind(original.seriesId, sourceDate));
+    } else {
+      const regular = await readRegularTasks(sourceDate);
+      statements.push(writeRegularTasks(sourceDate, regular.filter((task) => task.id !== taskId)));
+    }
+    if (updated.repeat !== 'none') {
+      statements.push(db.prepare(`INSERT INTO "${recurrenceTable}" (id, start_date, task) VALUES (?, ?, ?)`)
+        .bind(updated.id, targetDate, JSON.stringify({ ...updated, done: false })));
+    } else {
+      const regular = await readRegularTasks(targetDate);
+      if (targetTasks.some((task) => task.id === updated.id)) {
+        return json({ error: 'Lịch trình đã tồn tại ở ngày được chọn.' }, 409);
+      }
+      statements.push(writeRegularTasks(targetDate, [...regular, updated]));
+    }
+  }
+  await db.batch(statements);
+  return json({ ok: true });
+}
+
 async function handleSchedule(request, db, username, pathname, url) {
+  if (pathname === '/api/tasks/move') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    return moveScheduledTask(request, db, username);
+  }
   if (pathname === '/api/tasks') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
 

@@ -2623,3 +2623,9 @@ button, input, select, textarea { font-family: inherit; }
   .calendar-grid-week .task-delete { min-width: 44px; min-height: 44px; opacity: 1; }
   .calendar-grid-week .mobile-task-count { display: none; }
 }
+
+.btn-add-schedule { min-height: 44px; white-space: nowrap; }
+.task-form-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.task-date-option { margin-bottom: 14px; font-size: 12px; }
+.task-date-option input { width: 100%; min-width: 0; min-height: 44px; }
+.task-form-fields:disabled { opacity: .65; }

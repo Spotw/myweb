@@ -1540,6 +1540,9 @@
     const [savingDates, setSavingDates] = useState({});
     const [dayErrors, setDayErrors] = useState({});
     const [activeDate, setActiveDate] = useState('');
+    const [taskDate, setTaskDate] = useState('');
+    const [formSaving, setFormSaving] = useState(false);
+    const [formError, setFormError] = useState('');
     const [newTitle, setNewTitle] = useState('');
     const [startTime, setStartTime] = useState('');
     const [durationHours, setDurationHours] = useState('');
@@ -1863,10 +1866,14 @@
       setRepeatUntil('');
       setEditingTaskId('');
       setEditScope('occurrence');
+      setTaskDate(date);
+      setFormError('');
       setActiveDate(date);
     }
 
     function editTask(task) {
+      setTaskDate(activeDate);
+      setFormError('');
       setEditingTaskId(task.id);
       setNewTitle(task.title);
       setStartTime(task.startTime || '');
@@ -1878,6 +1885,8 @@
     }
 
     function clearTaskForm() {
+      setTaskDate(activeDate);
+      setFormError('');
       setNewTitle('');
       setStartTime('');
       setDurationHours('');
@@ -1889,6 +1898,7 @@
     }
 
     function closeDialog() {
+      if (formSaving) return;
       setActiveDate('');
       clearTaskForm();
     }
@@ -1896,7 +1906,7 @@
     async function saveTask(event) {
       event.preventDefault();
       const title = newTitle.trim();
-      if (!title || !activeDate || savingDates[activeDate]) return;
+      if (!title || !activeDate || !taskDate || formSaving || loading || savingDates[activeDate]) return;
       if (title.length > MAX_TASK_TITLE_LENGTH) return;
       const details = {
         title,
@@ -1910,6 +1920,36 @@
           ? editingTask.repeatUntil
           : repeat === 'none' ? null : (repeatUntil || null)
       };
+
+      if (taskDate !== activeDate) {
+        setFormSaving(true);
+        setFormError('');
+        try {
+          if (editingTask) {
+            await apiRequest('/api/tasks/move', {
+              method: 'POST',
+              body: JSON.stringify({ sourceDate: activeDate, targetDate: taskDate,
+                taskId: editingTask.id, scope: editScope, details })
+            });
+          } else {
+            const data = await apiRequest(`/api/tasks?month=${taskDate.slice(0, 7)}`);
+            const tasks = data.tasks?.[taskDate] || [];
+            if (tasks.length >= MAX_TASKS_PER_DAY) throw new Error('Ngày được chọn đã đủ 20 công việc.');
+            const task = { id: crypto.randomUUID(), ...details, done: false };
+            if (!await saveTasks(taskDate, [...tasks, task])) throw new Error('Chưa lưu được lịch trình. Hãy thử lại.');
+          }
+          const [targetYear, targetMonth, targetDay] = taskDate.split('-').map(Number);
+          setViewMonth(new Date(targetYear, targetMonth - 1, targetDay));
+          setRefreshToken((current) => current + 1);
+          setActiveDate('');
+          clearTaskForm();
+        } catch (error) {
+          setFormError(error.message || 'Chưa lưu được lịch trình. Hãy thử lại.');
+        } finally {
+          setFormSaving(false);
+        }
+        return;
+      }
 
       if (editingTask) {
         const updatedTask = { ...editingTask, ...details };
@@ -2028,6 +2068,14 @@
               ),
               h('button', {
                 type: 'button',
+                className: 'btn btn-save btn-add-schedule',
+                disabled: loading,
+                onClick: () => openDialog(dateKey(year, month,
+                  calendarView === 'month' && year === today.getFullYear() && month === today.getMonth()
+                    ? today.getDate() : viewMonth.getDate()))
+              }, 'Thêm lịch trình'),
+              h('button', {
+                type: 'button',
                 className: 'btn btn-today',
                 onClick: goToToday,
                 'aria-label': `Về ${periodUnit} hiện tại`,
@@ -2096,13 +2144,7 @@
                     className: 'lunar-date',
                     title: `Ngày ${lunarDateLabel(lunarDate)} âm lịch`
                   }, lunarDateLabel(lunarDate))
-                ),
-                h('button', {
-                  type: 'button',
-                  className: 'add-task-button',
-                  onClick: () => openDialog(date),
-                  'aria-label': `Thêm công việc ngày ${day}`
-                }, '+')
+                )
               ),
               h('div', { className: 'cell-tasks' },
                 calendarView === 'week' && !tasks.length && h('span', { className: 'week-empty-note' }, loading ? 'Đang tải…' : 'Chưa có công việc'),
@@ -2172,21 +2214,23 @@
         type: 'button',
         className: 'dialog-close',
         onClick: closeDialog,
+        disabled: formSaving,
         'aria-label': 'Đóng'
       }, '×'),
       h('span', { className: 'section-kicker' }, editingTask ? 'CHỈNH SỬA CÔNG VIỆC' : 'THÊM VÀO LỊCH'),
-      h('h2', { id: 'dialog-title' }, activeDate.split('-').reverse().join('/')),
+      h('h2', { id: 'dialog-title' }, editingTask ? 'Sửa lịch trình' : 'Thêm lịch trình'),
       h('p', { className: 'dialog-lunar-date' },
         `Âm lịch: ${lunarDateLabel(toLunarDate(
-          Number(activeDate.slice(-2)),
-          Number(activeDate.slice(5, 7)),
-          Number(activeDate.slice(0, 4))
+          Number((taskDate || activeDate).slice(-2)),
+          Number((taskDate || activeDate).slice(5, 7)),
+          Number((taskDate || activeDate).slice(0, 4))
         ))}`
       ),
       h('p', { className: 'dialog-description' },
         editingTask ? 'Cập nhật thông tin công việc của bạn.' : 'Việc gì bạn muốn nhớ làm vào ngày này?'),
       dayErrors[activeDate] && h('p', { className: 'dialog-error', role: 'alert' }, dayErrors[activeDate]),
-      selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
+      formError && h('p', { className: 'dialog-error', role: 'alert' }, formError),
+      taskDate === activeDate && selectedTasks.length > 0 && h('div', { className: 'dialog-task-list' },
         h('h3', null, `Việc trong ngày này (${selectedTasks.length})`),
         sortedSelectedTasks.map((task) => h('div', {
           className: `dialog-task${task.done ? ' is-done' : ''}`,
@@ -2195,7 +2239,7 @@
         h('button', {
           type: 'button',
           className: 'task-toggle dialog-task-toggle',
-          disabled: Boolean(savingDates[activeDate]),
+          disabled: formSaving || Boolean(savingDates[activeDate]),
           onClick: () => toggleTask(activeDate, task.id),
           'aria-label': `${task.done ? 'Đánh dấu chưa xong' : 'Hoàn thành'}: ${task.title}`
         },
@@ -2215,19 +2259,19 @@
         h('button', {
           type: 'button',
           className: 'dialog-task-edit',
-          disabled: Boolean(savingDates[activeDate]),
+          disabled: formSaving || Boolean(savingDates[activeDate]),
           onClick: () => editTask(task),
           'aria-label': `Sửa công việc: ${task.title}`
         }, 'Sửa'),
         h('button', {
           type: 'button',
           className: 'dialog-task-delete',
-          disabled: Boolean(savingDates[activeDate]),
+          disabled: formSaving || Boolean(savingDates[activeDate]),
           onClick: () => removeTask(activeDate, task.id),
           'aria-label': `Xóa công việc: ${task.title}`
         }, 'Xóa')))
       ),
-      editingRecurringTask && h('fieldset', { className: 'edit-scope' },
+      editingRecurringTask && h('fieldset', { className: 'edit-scope', disabled: formSaving },
         h('legend', null, 'Áp dụng thay đổi'),
         h('label', null,
           h('input', {
@@ -2250,7 +2294,26 @@
           ' Toàn bộ chuỗi'
         )
       ),
-      h('form', { onSubmit: saveTask },
+      h('form', { onSubmit: saveTask, 'aria-busy': formSaving },
+        h('fieldset', { className: 'task-form-fields', disabled: formSaving },
+        h('label', { className: 'task-option task-date-option', htmlFor: 'task-date' },
+          h('span', null, 'Ngày / tháng / năm'),
+          h('input', {
+            id: 'task-date',
+            className: 'task-input task-option-input',
+            type: 'date',
+            min: '0001-01-01',
+            max: '9999-12-31',
+            required: true,
+            value: taskDate,
+            onChange: (event) => { setTaskDate(event.target.value); setFormError(''); }
+          })
+        ),
+        editingRecurringTask && taskDate !== activeDate && h('p', { className: 'repeat-note' },
+          editScope === 'series'
+            ? 'Cả chuỗi sẽ dịch theo số ngày thay đổi. Ngày kết thúc lặp giữ theo lựa chọn bên dưới.'
+            : 'Lần này sẽ được chuyển thành lịch riêng ở ngày mới; các lần lặp khác giữ nguyên.'
+        ),
         h('label', { className: 'sr-only', htmlFor: 'new-task-title' }, 'Tên công việc'),
         h('input', {
           ref: titleInput,
@@ -2336,7 +2399,7 @@
               h('input', {
                 className: 'task-input task-option-input',
                 type: 'date',
-                min: activeDate,
+                min: taskDate,
                 required: true,
                 value: repeatUntil,
                 onChange: (event) => setRepeatUntil(event.target.value),
@@ -2360,14 +2423,14 @@
             h('button', {
               type: 'submit',
               className: 'btn btn-save',
-              disabled: !newTitle.trim() || Boolean(savingDates[activeDate]) ||
-                (!editingTask && selectedTasks.length >= MAX_TASKS_PER_DAY)
-            }, savingDates[activeDate] ? 'Đang lưu...' : editingTask ? 'Lưu thay đổi' : 'Thêm công việc')
+              disabled: !newTitle.trim() || !taskDate || loading || formSaving || Boolean(savingDates[activeDate]) ||
+                (!editingTask && taskDate === activeDate && selectedTasks.length >= MAX_TASKS_PER_DAY)
+            }, formSaving || savingDates[activeDate] ? 'Đang lưu...' : editingTask ? 'Lưu thay đổi' : 'Thêm lịch trình')
           )
         ),
-        !editingTask && selectedTasks.length >= MAX_TASKS_PER_DAY &&
+        !editingTask && taskDate === activeDate && selectedTasks.length >= MAX_TASKS_PER_DAY &&
           h('p', { className: 'dialog-error', role: 'status' }, 'Ngày này đã đạt giới hạn 20 công việc.')
-      ))
+      )))
       ),
       h('div', { className: 'sr-only', 'aria-live': 'polite' },
         `${monthTasks.length} công việc trong tháng`
