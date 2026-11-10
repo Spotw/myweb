@@ -1531,7 +1531,8 @@
 
   function CalendarApp() {
     const [today, setToday] = useState(() => new Date());
-    const [viewMonth, setViewMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    const [viewMonth, setViewMonth] = useState(() => new Date());
+    const [calendarView, setCalendarView] = useState('month');
     const [tasksByDate, setTasksByDate] = useState({});
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
@@ -1666,13 +1667,25 @@
     }, []);
 
     const calendarDays = useMemo(() => {
+      if (calendarView === 'week') {
+        const monday = new Date(year, month, viewMonth.getDate());
+        monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+        return Array.from({ length: 7 }, (_, index) =>
+          new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + index));
+      }
       const offset = (new Date(year, month, 1).getDay() + 6) % 7;
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       return [
         ...Array(offset).fill(null),
-        ...Array.from({ length: daysInMonth }, (_, index) => index + 1)
+        ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, month, index + 1))
       ];
-    }, [year, month]);
+    }, [viewMonth, calendarView]);
+    const requestedMonths = [...new Set([monthKey, ...calendarDays.filter(Boolean)
+      .map((date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}`)])].sort().join(',');
+    const periodLabel = calendarView === 'week'
+      ? `${calendarDays[0].toLocaleDateString('vi-VN')} – ${calendarDays[6].toLocaleDateString('vi-VN')}`
+      : `${MONTHS[month]} ${year}`;
+    const periodUnit = calendarView === 'week' ? 'tuần' : 'tháng';
 
     useEffect(() => {
       const timer = window.setInterval(() => setToday(new Date()), 60_000);
@@ -1684,13 +1697,16 @@
       setLoading(true);
       setLoadError('');
 
-      fetch(`/api/tasks?month=${monthKey}`, { cache: 'no-store' })
-        .then((response) => {
+      setTasksByDate({});
+      Promise.all(requestedMonths.split(',').map((key) =>
+        fetch(`/api/tasks?month=${key}`, { cache: 'no-store' }).then((response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           return response.json();
         })
-        .then((data) => {
-          if (active) setTasksByDate(data.tasks && typeof data.tasks === 'object' ? data.tasks : {});
+      ))
+        .then((results) => {
+          if (active) setTasksByDate(Object.assign({}, ...results.map((data) =>
+            data.tasks && typeof data.tasks === 'object' ? data.tasks : {})));
         })
         .catch(() => {
           if (active) setLoadError('Không tải được lịch trình. Hãy kiểm tra kết nối rồi thử lại.');
@@ -1700,7 +1716,7 @@
         });
 
       return () => { active = false; };
-    }, [monthKey, refreshToken]);
+    }, [requestedMonths, refreshToken]);
 
     useEffect(() => {
       if (loading || !window.gsap || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1713,7 +1729,7 @@
         );
       });
       return () => context.revert();
-    }, [monthKey, loading]);
+    }, [viewMonth, calendarView, loading]);
 
     useEffect(() => {
       if (!activeDate) return undefined;
@@ -1727,13 +1743,15 @@
     }, [activeDate]);
 
     function changeMonth(amount) {
-      setViewMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+      setViewMonth((current) => calendarView === 'week'
+        ? new Date(current.getFullYear(), current.getMonth(), current.getDate() + amount * 7)
+        : new Date(current.getFullYear(), current.getMonth() + amount, 1));
     }
 
     function goToToday() {
       const current = new Date();
       setToday(current);
-      setViewMonth(new Date(current.getFullYear(), current.getMonth(), 1));
+      setViewMonth(current);
     }
 
     function setDateTasks(date, tasks) {
@@ -1984,7 +2002,7 @@
             onClick: () => setRefreshToken((current) => current + 1)
           }, 'Thử tải lại')
         ),
-        h('main', { className: 'calendar-section', 'aria-label': 'Lịch trình theo tháng' },
+        h('main', { className: 'calendar-section', 'aria-label': `Lịch trình theo ${periodUnit}` },
           h('div', { className: 'fish-school', 'aria-hidden': 'true' },
             ['fish-school-small', 'fish-school-medium', 'fish-school-small']
               .map((sizeClass, index) => h(AnimalSticker, {
@@ -1996,47 +2014,59 @@
           h('div', { className: 'calendar-toolbar' },
             h('div', { className: 'month-heading' },
               h('span', { className: 'section-kicker' }, 'KẾ HOẠCH CỦA BẠN'),
-              h('h2', { 'aria-live': 'polite' }, `${MONTHS[month]} ${year}`)
+              h('h2', { 'aria-live': 'polite' }, periodLabel)
             ),
             h('div', { className: 'calendar-controls' },
+              h('div', { className: 'calendar-view-switch', role: 'group', 'aria-label': 'Chế độ hiển thị lịch' },
+                [['month', 'Tháng'], ['week', 'Tuần']].map(([value, label]) => h('button', {
+                  key: value,
+                  type: 'button',
+                  className: 'calendar-view-button',
+                  'aria-pressed': calendarView === value,
+                  onClick: () => setCalendarView(value)
+                }, label))
+              ),
               h('button', {
                 type: 'button',
                 className: 'btn btn-today',
                 onClick: goToToday,
-                'aria-label': 'Về tháng hiện tại',
-                'data-floating-tooltip': 'Quay về lịch tháng hiện tại'
+                'aria-label': `Về ${periodUnit} hiện tại`,
+                'data-floating-tooltip': `Quay về lịch ${periodUnit} hiện tại`
               }, 'Hôm nay'),
               h('div', { className: 'month-arrows' },
                 h('button', {
                   type: 'button',
                   className: 'icon-button',
                   onClick: () => changeMonth(-1),
-                  'aria-label': 'Tháng trước',
-                  'data-floating-tooltip': 'Xem tháng trước'
+                  'aria-label': calendarView === 'week' ? 'Tuần trước' : 'Tháng trước',
+                  'data-floating-tooltip': `Xem ${periodUnit} trước`
                 }, '‹'),
                 h('button', {
                   type: 'button',
                   className: 'icon-button',
                   onClick: () => changeMonth(1),
-                  'aria-label': 'Tháng sau',
-                  'data-floating-tooltip': 'Xem tháng sau'
+                  'aria-label': calendarView === 'week' ? 'Tuần sau' : 'Tháng sau',
+                  'data-floating-tooltip': `Xem ${periodUnit} sau`
                 }, '›')
               )
             )
           ),
-          h('div', { className: 'calendar-grid', 'aria-busy': loading },
+          h('div', { className: `calendar-grid${calendarView === 'week' ? ' calendar-grid-week' : ''}`, 'aria-busy': loading },
             WEEKDAYS.map((day, index) => h('div', { className: 'weekday', key: day },
               h('span', { className: 'weekday-full' }, day),
               h('span', { className: 'weekday-short' }, ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'][index])
             )),
-            calendarDays.map((day, index) => {
-              if (!day) return h('div', { className: 'calendar-cell is-empty', key: `empty-${index}` });
-              const date = dateKey(year, month, day);
-              const lunarDate = toLunarDate(day, month + 1, year);
+            calendarDays.map((cellDate, index) => {
+              if (!cellDate) return h('div', { className: 'calendar-cell is-empty', key: `empty-${index}` });
+              const day = cellDate.getDate();
+              const cellMonth = cellDate.getMonth();
+              const cellYear = cellDate.getFullYear();
+              const date = dateKey(cellYear, cellMonth, day);
+              const lunarDate = toLunarDate(day, cellMonth + 1, cellYear);
               const tasks = tasksByDate[date] || [];
               const sortedTasks = sortTasksByStartTime(tasks);
               const isToday = date === todayKey;
-              const visibleTasks = sortedTasks.slice(0, 2);
+              const visibleTasks = calendarView === 'week' ? sortedTasks : sortedTasks.slice(0, 2);
               const extraTasks = tasks.length - visibleTasks.length;
 
               return h('section', {
@@ -2044,7 +2074,7 @@
                 key: date,
                 role: 'group',
                 tabIndex: 0,
-                'aria-label': `${day} ${MONTHS[month]}, ngày ${lunarDateLabel(lunarDate)} âm lịch${tasks.length ? `, ${tasks.length} công việc` : ''}`,
+                'aria-label': `${day} ${MONTHS[cellMonth]} ${cellYear}, ngày ${lunarDateLabel(lunarDate)} âm lịch${tasks.length ? `, ${tasks.length} công việc` : ''}`,
                 onClick: (event) => {
                   if (!event.target.closest('button')) openDialog(date);
                 },
@@ -2060,7 +2090,8 @@
               },
               h('div', { className: 'cell-top' },
                 h('div', { className: 'cell-date-labels' },
-                  h('span', { className: `date-number${isToday ? ' today-number-badge' : ''}` }, day),
+                  calendarView === 'week' && h('span', { className: 'week-day-name' }, WEEKDAYS[index]),
+                  h('span', { className: `date-number${isToday ? ' today-number-badge' : ''}` }, calendarView === 'week' ? `${day}/${cellMonth + 1}` : day),
                   h('span', {
                     className: 'lunar-date',
                     title: `Ngày ${lunarDateLabel(lunarDate)} âm lịch`
@@ -2074,6 +2105,7 @@
                 }, '+')
               ),
               h('div', { className: 'cell-tasks' },
+                calendarView === 'week' && !tasks.length && h('span', { className: 'week-empty-note' }, loading ? 'Đang tải…' : 'Chưa có công việc'),
                 visibleTasks.map((task) => h('div', {
                   className: `task-chip${task.done ? ' is-done' : ''}`,
                   key: task.id
@@ -2143,7 +2175,7 @@
         'aria-label': 'Đóng'
       }, '×'),
       h('span', { className: 'section-kicker' }, editingTask ? 'CHỈNH SỬA CÔNG VIỆC' : 'THÊM VÀO LỊCH'),
-      h('h2', { id: 'dialog-title' }, `${pad(Number(activeDate.slice(-2)))}/${pad(month + 1)}/${year}`),
+      h('h2', { id: 'dialog-title' }, activeDate.split('-').reverse().join('/')),
       h('p', { className: 'dialog-lunar-date' },
         `Âm lịch: ${lunarDateLabel(toLunarDate(
           Number(activeDate.slice(-2)),
