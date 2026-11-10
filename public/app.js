@@ -262,7 +262,7 @@
           method: 'POST',
           body: JSON.stringify({ username, password })
         });
-        onLogin(result.username);
+        onLogin(result);
       } catch (loginError) {
         setError(loginError.message);
       } finally {
@@ -988,8 +988,10 @@
     );
   }
 
-  function AccountDialog({ username, onClose }) {
-    const [section, setSection] = useState('password');
+  function AccountDialog({ username, nickname, onNicknameChange, onClose }) {
+    const [section, setSection] = useState('profile');
+    const [profileNickname, setProfileNickname] = useState(nickname || '');
+    const [accountNickname, setAccountNickname] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -1009,6 +1011,25 @@
         document.removeEventListener('keydown', handleKeyDown);
       };
     }, []);
+
+    async function saveProfile(event) {
+      event.preventDefault();
+      setError('');
+      setNotice('');
+      setSaving(true);
+      try {
+        const result = await apiRequest('/api/auth/profile', {
+          method: 'PUT', body: JSON.stringify({ nickname: profileNickname })
+        });
+        setProfileNickname(result.nickname);
+        onNicknameChange(result.nickname);
+        setNotice('Đã cập nhật nickname.');
+      } catch (profileError) {
+        setError(profileError.message);
+      } finally {
+        setSaving(false);
+      }
+    }
 
     async function changePassword(event) {
       event.preventDefault();
@@ -1051,9 +1072,10 @@
       try {
         const result = await apiRequest('/api/auth/accounts', {
           method: 'POST',
-          body: JSON.stringify({ username: accountUsername, password: accountPassword })
+          body: JSON.stringify({ username: accountUsername, password: accountPassword, nickname: accountNickname })
         });
         setAccountUsername('');
+        setAccountNickname('');
         setAccountPassword('');
         setConfirmAccountPassword('');
         setNotice(`Đã tạo tài khoản ${result.username}.`);
@@ -1086,6 +1108,11 @@
     h('h2', { id: 'account-dialog-title' }, 'Cài đặt tài khoản'),
     h('div', { className: 'account-dialog-tabs', role: 'tablist', 'aria-label': 'Cài đặt tài khoản' },
       h('button', {
+        type: 'button', role: 'tab', 'aria-selected': section === 'profile',
+        className: section === 'profile' ? 'active' : '', disabled: saving,
+        onClick: () => { setSection('profile'); setError(''); setNotice(''); }
+      }, 'Hồ sơ'),
+      h('button', {
         type: 'button',
         role: 'tab',
         'aria-selected': section === 'password',
@@ -1109,7 +1136,20 @@
     ),
     error && h('p', { className: 'account-message error', role: 'alert' }, error),
     notice && h('p', { className: 'account-message success', role: 'status' }, notice),
-    section === 'zalo'
+    section === 'profile'
+      ? h('form', { className: 'account-form', onSubmit: saveProfile },
+          h('p', { className: 'account-form-hint' }, `Tên đăng nhập: ${username}`),
+          h('label', { htmlFor: 'profile-nickname' }, 'Nickname'),
+          h('input', {
+            id: 'profile-nickname', autoComplete: 'nickname', maxLength: 50,
+            'aria-describedby': 'profile-nickname-hint',
+            value: profileNickname, onChange: (event) => setProfileNickname(event.target.value)
+          }),
+          h('p', { id: 'profile-nickname-hint', className: 'account-form-hint' }, 'Tối đa 50 ký tự. Để trống để hiển thị tên đăng nhập.'),
+          h('button', { className: 'btn btn-save', type: 'submit', disabled: saving },
+            saving ? 'Đang lưu...' : 'Lưu nickname')
+        )
+      : section === 'zalo'
       ? h(ZaloSettings, { username })
       : section === 'accounts'
       ? h('form', { className: 'account-form', onSubmit: createAccount },
@@ -1121,6 +1161,11 @@
               value: accountUsername,
               onChange: (event) => setAccountUsername(event.target.value),
               required: true
+            }),
+            h('label', { htmlFor: 'new-account-nickname' }, 'Nickname (tùy chọn)'),
+            h('input', {
+              id: 'new-account-nickname', autoComplete: 'off', maxLength: 50,
+              value: accountNickname, onChange: (event) => setAccountNickname(event.target.value)
             }),
             h('label', { htmlFor: 'new-account-password' }, 'Mật khẩu'),
             h('input', {
@@ -1192,10 +1237,76 @@
     ));
   }
 
-  function Workspace({ username, onLogout }) {
+  function WorkspaceIcon({ name }) {
+    const paths = {
+      calendar: ['M8 2v4M16 2v4M3 10h18', 'M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z', 'M7 14h3M14 14h3M7 18h3'],
+      entries: ['M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],
+      account: ['M20 21v-2a7 7 0 0 0-14 0v2', 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'],
+      logout: ['M9 4H4v16h5M13 8l4 4-4 4M8 12h13'],
+      menu: ['M4 6h16M4 12h16M4 18h16'],
+      close: ['M6 6l12 12M6 18 18 6']
+    };
+    return h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', focusable: 'false' },
+      (paths[name] || paths.entries).map((d, index) => h('path', { key: index, d }))
+    );
+  }
+
+  function Workspace({ username, nickname, onNicknameChange, onLogout }) {
+    const displayName = nickname || username;
     const [activeView, setActiveView] = useState('calendar');
     const [logoutError, setLogoutError] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches);
+    const menuButton = useRef(null);
+    const sidebar = useRef(null);
+    const menuCloseButton = useRef(null);
+
+    function closeMenu() {
+      setMenuOpen(false);
+      if (window.matchMedia('(max-width: 760px)').matches) {
+        requestAnimationFrame(() => menuButton.current?.focus());
+      }
+    }
+
+    useEffect(() => {
+      const media = window.matchMedia('(max-width: 760px)');
+      const handleResize = () => {
+        setIsMobile(media.matches);
+        setMenuOpen(false);
+      };
+      media.addEventListener('change', handleResize);
+      return () => media.removeEventListener('change', handleResize);
+    }, []);
+
+    useEffect(() => {
+      if (!isMobile || !menuOpen) return undefined;
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      menuCloseButton.current?.focus();
+      function handleKeyDown(event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeMenu();
+        }
+        if (event.key !== 'Tab') return;
+        const controls = sidebar.current.querySelectorAll('a[href], button:not(:disabled)');
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = previousOverflow;
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }, [isMobile, menuOpen]);
 
     async function logout() {
       setLogoutError('');
@@ -1207,42 +1318,75 @@
       }
     }
 
-    return h('div', { className: 'workspace' },
-      h('header', { className: 'workspace-bar' },
+    return h('div', { className: `workspace${menuOpen ? ' is-menu-open' : ''}` },
+      isMobile && menuOpen && h('button', {
+        className: 'workspace-menu-backdrop', type: 'button', tabIndex: -1,
+        'aria-label': 'Đóng thanh điều hướng', onClick: closeMenu
+      }),
+      h('aside', {
+        ref: sidebar, id: 'workspace-sidebar', className: 'workspace-bar',
+        'aria-label': 'Thanh điều hướng', inert: isMobile && !menuOpen ? '' : undefined,
+        role: isMobile && menuOpen ? 'dialog' : undefined,
+        'aria-modal': isMobile && menuOpen ? 'true' : undefined
+      },
+        h('button', {
+          ref: menuCloseButton, className: 'workspace-menu-close', type: 'button',
+          'aria-label': 'Đóng menu', onClick: closeMenu
+        }, h(WorkspaceIcon, { name: 'close' })),
         h('a', { className: 'workspace-brand', href: '/', 'aria-label': 'Trang chủ' },
           h('span', { className: 'workspace-brand-mark' }, '✳'),
-          h('span', null, 'Không gian chung')
+          h('span', { className: 'workspace-brand-copy' }, 'Không gian', h('small', null, 'CỦA BẠN'))
         ),
+        h('span', { className: 'workspace-nav-label' }, 'KHÔNG GIAN LÀM VIỆC'),
         h('nav', { className: 'workspace-tabs', 'aria-label': 'Tính năng' },
           h('button', {
             type: 'button',
             className: `workspace-tab${activeView === 'calendar' ? ' active' : ''}`,
-            onClick: () => setActiveView('calendar')
-          }, 'Lịch trình tháng'),
+            onClick: () => { setActiveView('calendar'); closeMenu(); },
+            'aria-label': 'Lịch trình tháng',
+            'aria-current': activeView === 'calendar' ? 'page' : undefined,
+            'data-floating-tooltip': 'Lịch trình tháng'
+          }, h(WorkspaceIcon, { name: 'calendar' }), h('span', null, 'Lịch trình tháng')),
           h('button', {
             type: 'button',
             className: `workspace-tab${activeView === 'entries' ? ' active' : ''}`,
-            onClick: () => setActiveView('entries')
-          }, 'Cổng thông tin')
+            onClick: () => { setActiveView('entries'); closeMenu(); },
+            'aria-label': 'Cổng thông tin',
+            'aria-current': activeView === 'entries' ? 'page' : undefined,
+            'data-floating-tooltip': 'Cổng thông tin'
+          }, h(WorkspaceIcon, { name: 'entries' }), h('span', null, 'Cổng thông tin'))
         ),
         h('div', { className: 'workspace-account' },
           h('button', {
             className: 'workspace-username',
             type: 'button',
-            onClick: () => setAccountOpen(true),
-            'aria-label': `Mở cài đặt tài khoản ${username}`
-          }, h('span', { 'aria-hidden': 'true' }, '◉'), username),
-          h('button', { className: 'workspace-logout', type: 'button', onClick: logout }, 'Đăng xuất')
+            onClick: () => { closeMenu(); setAccountOpen(true); },
+            'aria-label': `Mở cài đặt tài khoản ${username}`,
+            'data-floating-tooltip': `Tài khoản: ${username}`
+          }, h(WorkspaceIcon, { name: 'account' }), h('span', null, displayName)),
+          h('button', { className: 'workspace-logout', type: 'button', onClick: () => { closeMenu(); logout(); }, 'aria-label': 'Đăng xuất', 'data-floating-tooltip': 'Đăng xuất' }, h(WorkspaceIcon, { name: 'logout' }), h('span', null, 'Đăng xuất'))
         )
       ),
+      h('div', { className: 'workspace-content', inert: isMobile && menuOpen ? '' : undefined },
+      h('header', { className: 'workspace-topline' },
+        h('button', {
+          ref: menuButton, className: 'workspace-menu-toggle', type: 'button',
+          'aria-label': 'Mở menu chức năng', 'aria-controls': 'workspace-sidebar',
+          'aria-expanded': menuOpen, onClick: () => setMenuOpen(true)
+        }, h(WorkspaceIcon, { name: 'menu' })),
+        h('div', null, h('span', { className: 'section-kicker' }, 'KHÔNG GIAN CHUNG'),
+          h('h2', null, activeView === 'calendar' ? 'Lịch trình của bạn' : 'Kho thông tin của bạn')),
+        h('span', { className: 'workspace-greeting' }, 'Chào, ', h('strong', null, displayName))
+      ),
       logoutError && h('p', { className: 'workspace-error', role: 'alert' }, logoutError),
-      accountOpen && h(AccountDialog, { username, onClose: () => setAccountOpen(false) }),
-      activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal)
+      accountOpen && h(AccountDialog, { username, nickname, onNicknameChange, onClose: () => setAccountOpen(false) }),
+      activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal))
     );
   }
 
   function AuthenticatedApp() {
     const [username, setUsername] = useState(null);
+    const [nickname, setNickname] = useState('');
     const [checking, setChecking] = useState(true);
     const [error, setError] = useState('');
 
@@ -1293,7 +1437,7 @@
 
         stopAutoUpdate = floatingUI.autoUpdate(target, tooltip, () => {
           floatingUI.computePosition(target, tooltip, {
-            placement: 'top',
+            placement: target.closest('.workspace-bar') ? 'right' : 'top',
             strategy: 'fixed',
             middleware: [
               floatingUI.offset(8),
@@ -1358,7 +1502,10 @@
       let active = true;
       apiRequest('/api/auth/session')
         .then((session) => {
-          if (active && session.authenticated) setUsername(session.username);
+          if (active && session.authenticated) {
+            setUsername(session.username);
+            setNickname(session.nickname || '');
+          }
         })
         .catch((sessionError) => {
           if (active) setError(sessionError.message);
@@ -1372,8 +1519,14 @@
     if (checking) {
       return h('main', { className: 'login-shell' }, h('p', { className: 'login-loading' }, 'Đang kiểm tra phiên đăng nhập...'));
     }
-    if (username) return h(Workspace, { username, onLogout: () => setUsername(null) });
-    return h(LoginView, { onLogin: setUsername, initialError: error });
+    if (username) return h(Workspace, {
+      username, nickname, onNicknameChange: setNickname,
+      onLogout: () => { setUsername(null); setNickname(''); }
+    });
+    return h(LoginView, {
+      onLogin: (session) => { setUsername(session.username); setNickname(session.nickname || ''); },
+      initialError: error
+    });
   }
 
   function CalendarApp() {

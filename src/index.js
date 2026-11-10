@@ -9,6 +9,7 @@ const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,253}$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 100000;
 const ACCOUNT_CREATOR_USERNAME = 'duyvu@pvdv';
+const NICKNAME_MAX_LENGTH = 50;
 const ZALO_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const ZALO_WEBHOOK_PATH = '/api/zalo/webhook';
 const ENTRY_LIMITS = { mo_ta: 300, loai_thong_tin: 100, noi_dung: 10000 };
@@ -248,6 +249,35 @@ async function readManagedAccount(db, username) {
   ).bind(username.toLowerCase()).first();
 }
 
+async function readNickname(db, username) {
+  const profile = await db.prepare(
+    'SELECT nickname FROM user_profiles WHERE username = ?'
+  ).bind(username.toLowerCase()).first();
+  return profile?.nickname || '';
+}
+
+function normalizeNickname(value) {
+  if (typeof value !== 'string' || value.length > NICKNAME_MAX_LENGTH || /[\u0000-\u001f\u007f]/u.test(value)) {
+    return null;
+  }
+  return value.trim();
+}
+
+async function handleProfile(request, db, username) {
+  if (request.method === 'GET') return json({ nickname: await readNickname(db, username) });
+  if (request.method !== 'PUT') return json({ error: 'Method not allowed' }, 405);
+  const body = await readJson(request);
+  const nickname = normalizeNickname(body?.nickname);
+  if (nickname === null) {
+    return json({ error: `Nickname phải là văn bản tối đa ${NICKNAME_MAX_LENGTH} ký tự, không chứa ký tự điều khiển.` }, 400);
+  }
+  await db.prepare(
+    `INSERT INTO user_profiles (username, nickname) VALUES (?, ?)
+     ON CONFLICT(username) DO UPDATE SET nickname = excluded.nickname`
+  ).bind(username.toLowerCase(), nickname).run();
+  return json({ ok: true, nickname });
+}
+
 async function handlePasswordChange(request, db, username, env) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
   const body = await readJson(request);
@@ -324,6 +354,11 @@ async function createManagedAccount(request, db, username, env) {
     return json({ error: `Mật khẩu cần có ít nhất ${PASSWORD_MIN_LENGTH} ký tự.` }, 400);
   }
 
+  const nickname = normalizeNickname(body.nickname === undefined ? '' : body.nickname);
+  if (nickname === null) {
+    return json({ error: `Nickname phải là văn bản tối đa ${NICKNAME_MAX_LENGTH} ký tự, không chứa ký tự điều khiển.` }, 400);
+  }
+
   const normalizedUsername = newUsername.toLowerCase();
   if (getUsers(env).has(normalizedUsername)) {
     return json({ error: 'Tên tài khoản này đã tồn tại.' }, 409);
@@ -331,14 +366,24 @@ async function createManagedAccount(request, db, username, env) {
 
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const passwordHash = encodeBytes(await hashPassword(body.password, salt));
-  const result = await db.prepare(
-    `INSERT INTO user_accounts (username, password_salt, password_hash, created_by)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(username) DO NOTHING`
-  ).bind(normalizedUsername, encodeBytes(salt), passwordHash, username.toLowerCase()).run();
-
-  if (!result.meta?.changes) return json({ error: 'Tên tài khoản này đã tồn tại.' }, 409);
-  return json({ ok: true, username: normalizedUsername }, 201);
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO user_accounts (username, password_salt, password_hash, created_by)
+         VALUES (?, ?, ?, ?)`
+      ).bind(normalizedUsername, encodeBytes(salt), passwordHash, username.toLowerCase()),
+      db.prepare(
+        `INSERT INTO user_profiles (username, nickname) VALUES (?, ?)
+         ON CONFLICT(username) DO UPDATE SET nickname = excluded.nickname`
+      ).bind(normalizedUsername, nickname)
+    ]);
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE constraint failed: user_accounts.username')) {
+      return json({ error: 'Tên tài khoản này đã tồn tại.' }, 409);
+    }
+    throw error;
+  }
+  return json({ ok: true, username: normalizedUsername, nickname }, 201);
 }
 
 async function readJson(request) {
@@ -391,7 +436,16 @@ async function handleAuth(request, env, pathname) {
   if (pathname === '/api/auth/session') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
     const session = await readSession(request, env);
-    return json({ authenticated: Boolean(session), username: session?.username || null });
+    return json({
+      authenticated: Boolean(session), username: session?.username || null,
+      nickname: session ? await readNickname(env.DB, session.username) : ''
+    });
+  }
+
+  if (pathname === '/api/auth/profile') {
+    const session = await readSession(request, env);
+    if (!session) return json({ error: 'Vui lòng đăng nhập để tiếp tục.' }, 401);
+    return handleProfile(request, env.DB, session.username);
   }
 
   if (pathname === '/api/auth/accounts') {
@@ -445,7 +499,7 @@ async function handleAuth(request, env, pathname) {
     const token = await signSession(authenticatedUsername, expiresAt, env.AUTH_SECRET);
     const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
     return json(
-      { authenticated: true, username: authenticatedUsername },
+      { authenticated: true, username: authenticatedUsername, nickname: await readNickname(env.DB, authenticatedUsername) },
       200,
       {
         'Set-Cookie': `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${secure}`

@@ -32,7 +32,9 @@ AUTH_SECRET=chuoi_ngau_nhien_bi_mat_toi_thieu_32_ky_tu
 
 Đăng nhập tạo cookie `HttpOnly`, `SameSite=Strict`, hết hạn sau 7 ngày. Các API lịch và cổng thông tin đều yêu cầu phiên đăng nhập.
 
-Tài khoản `duyvu@pvdv` được phép tạo tài khoản đăng nhập trong cửa sổ cài đặt tài khoản. Quyền này được kiểm tra ở Worker, không chỉ ẩn/hiện nút trên giao diện. Người tạo nhập tên đăng nhập và mật khẩu (tối thiểu 8 ký tự); tên đăng nhập không phân biệt chữ hoa/thường. Áp dụng migration `0005_create_user_accounts.sql` cho D1 trước khi sử dụng tính năng này.
+Tài khoản `duyvu@pvdv` được phép tạo tài khoản đăng nhập trong cửa sổ cài đặt tài khoản. Quyền này được kiểm tra ở Worker, không chỉ ẩn/hiện nút trên giao diện. Người tạo nhập tên đăng nhập, nickname tùy chọn và mật khẩu (tối thiểu 8 ký tự); tên đăng nhập không phân biệt chữ hoa/thường. Áp dụng migration `0005_create_user_accounts.sql` cho D1 trước khi sử dụng tính năng này.
+
+Nickname được lưu trong cột `nickname` của bảng `user_profiles` hiện có, được thêm bằng [migration 0009](./migrations/0009_add_profile_nickname.sql); không tạo bảng mới. Áp dụng migration trước khi triển khai phiên bản có nickname. Tất cả tài khoản có thể đổi nickname tại **Cài đặt tài khoản → Hồ sơ**, tối đa 50 ký tự. Để trống sẽ hiển thị tên đăng nhập. Nickname không thay đổi tên đăng nhập hay quyền hạn. Khi tạo tài khoản, thông tin tài khoản và nickname được ghi trong cùng giao dịch.
 
 ## Cơ sở dữ liệu và triển khai
 
