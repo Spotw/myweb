@@ -2023,7 +2023,7 @@
             ),
             h('h1', null, 'Tháng mới,', h('br'), h('span', null, 'việc hay mỗi ngày.')),
             h('p', { className: 'hero-description' },
-              'Sắp xếp lịch trình tháng này thật nhẹ nhàng. Thêm việc cần làm vào từng ngày và dễ dàng theo dõi tiến độ.'
+              'Sắp xếp lịch trình tháng này thật nhẹ nhàng. Thêm việc cần làm vào từng ngày và dễ dàng theo dõi tiến độ.\nBạn có thể cài đặt để nhận thông báo lịch trình qua Zalo. '
             ),
             h('div', { className: 'month-progress', 'aria-live': 'polite' },
               h('span', { className: 'progress-number' }, String(completeCount)),
