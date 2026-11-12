@@ -690,16 +690,17 @@ button {
 }
 
 .dialog-description {
-  margin: 6px 0 19px;
+  margin: 0 0 20px;
   color: var(--muted);
   font-size: 12px;
 }
 
 .dialog-lunar-date {
-  margin: -12px 0 18px;
+  margin: 6px 0 12px;
   color: var(--green);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.6;
 }
 
 .dialog-task-list {
@@ -2629,3 +2630,40 @@ button, input, select, textarea { font-family: inherit; }
 .task-date-option { margin-bottom: 14px; font-size: 12px; }
 .task-date-option input { width: 100%; min-width: 0; min-height: 44px; }
 .task-form-fields:disabled { opacity: .65; }
+
+/* Keep the contribution form compact and reachable while browsing entries. */
+.workspace .portal-form-panel { padding: 18px; }
+.portal-form-panel .portal-form-description { margin-bottom: 12px; }
+.portal-form-panel .portal-form { row-gap: 7px; }
+.portal-form-panel .portal-form label { margin-top: 4px; }
+.portal-form-panel .portal-form input:not(.portal-file-input) { min-height: 38px; padding: 8px 10px; }
+.portal-form-panel .portal-form textarea { height: 96px; min-height: 80px; padding: 8px 10px; }
+.portal-form-panel .portal-content-heading { margin-top: 4px; }
+.portal-form-panel .portal-form-actions .portal-submit,
+.portal-form-panel .portal-form-actions .btn-cancel { margin-top: 5px; }
+
+@media (min-width: 1101px) {
+  .workspace .portal-form-panel {
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    scroll-padding-block: 16px;
+  }
+  .portal-form-panel .portal-form-actions {
+    position: sticky;
+    bottom: -18px;
+    padding-block: 8px;
+    background: var(--paper);
+  }
+}
+
+@media (max-width: 600px) {
+  .workspace .portal-form-panel { padding: 16px 14px; }
+  .portal-form-panel .portal-form input:not(.portal-file-input),
+  .portal-form-panel .portal-upload-button { min-height: 44px; }
+}
+
+/* Flower studio is mounted only for its workspace tab; styles stay in its document. */
+.flower-studio-shell{width:100%;min-width:0;overflow:hidden;border:1px solid #dbe3d5;border-radius:24px;background:#eae8df;box-shadow:0 10px 32px rgba(38,58,45,.06)}
+.flower-studio-frame{display:block;width:100%;height:calc(100svh - 132px);min-height:540px;border:0}
+@media(max-width:760px){.flower-studio-shell{border-radius:18px}.flower-studio-frame{height:calc(100svh - 142px);min-height:520px}}

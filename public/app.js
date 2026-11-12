@@ -1241,6 +1241,7 @@
     const paths = {
       calendar: ['M8 2v4M16 2v4M3 10h18', 'M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z', 'M7 14h3M14 14h3M7 18h3'],
       entries: ['M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'],
+      flowers: ['M9 15h6l1 6H8l1-6ZM12 15V9M12 12l-4-2M12 13l4-2', 'M12 3c-3-3-6 1-3 3-4 2-1 6 2 3 2 4 6 1 3-2 4-2 1-6-2-4Z'],
       account: ['M20 21v-2a7 7 0 0 0-14 0v2', 'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'],
       logout: ['M9 4H4v16h5M13 8l4 4-4 4M8 12h13'],
       menu: ['M4 6h16M4 12h16M4 18h16'],
@@ -1248,6 +1249,16 @@
     };
     return h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', focusable: 'false' },
       (paths[name] || paths.entries).map((d, index) => h('path', { key: index, d }))
+    );
+  }
+
+  function FlowerStudio() {
+    return h('main', { className: 'flower-studio-shell', 'aria-label': 'Góc cắm hoa' },
+      h('iframe', {
+        className: 'flower-studio-frame',
+        src: '/flower-studio/index.html',
+        title: 'Cắm hoa — bình hoa 3D và cảnh ngoài cửa sổ'
+      })
     );
   }
 
@@ -1354,7 +1365,15 @@
             'aria-label': 'Cổng thông tin',
             'aria-current': activeView === 'entries' ? 'page' : undefined,
             'data-floating-tooltip': 'Cổng thông tin'
-          }, h(WorkspaceIcon, { name: 'entries' }), h('span', null, 'Cổng thông tin'))
+          }, h(WorkspaceIcon, { name: 'entries' }), h('span', null, 'Cổng thông tin')),
+          h('button', {
+            type: 'button',
+            className: `workspace-tab${activeView === 'flowers' ? ' active' : ''}`,
+            onClick: () => { setActiveView('flowers'); closeMenu(); },
+            'aria-label': 'Cắm hoa',
+            'aria-current': activeView === 'flowers' ? 'page' : undefined,
+            'data-floating-tooltip': 'Cắm hoa'
+          }, h(WorkspaceIcon, { name: 'flowers' }), h('span', null, 'Cắm hoa'))
         ),
         h('div', { className: 'workspace-account' },
           h('button', {
@@ -1375,12 +1394,12 @@
           'aria-expanded': menuOpen, onClick: () => setMenuOpen(true)
         }, h(WorkspaceIcon, { name: 'menu' })),
         h('div', null, h('span', { className: 'section-kicker' }, 'KHÔNG GIAN CHUNG'),
-          h('h2', null, activeView === 'calendar' ? 'Lịch trình của bạn' : 'Kho thông tin của bạn')),
+          h('h2', null, activeView === 'calendar' ? 'Lịch trình của bạn' : activeView === 'flowers' ? 'Cắm hoa' : 'Kho thông tin của bạn')),
         h('span', { className: 'workspace-greeting' }, 'Chào, ', h('strong', null, displayName))
       ),
       logoutError && h('p', { className: 'workspace-error', role: 'alert' }, logoutError),
       accountOpen && h(AccountDialog, { username, nickname, onNicknameChange, onClose: () => setAccountOpen(false) }),
-      activeView === 'calendar' ? h(CalendarApp) : h(EntriesPortal))
+      activeView === 'calendar' ? h(CalendarApp) : activeView === 'flowers' ? h(FlowerStudio) : h(EntriesPortal))
     );
   }
 

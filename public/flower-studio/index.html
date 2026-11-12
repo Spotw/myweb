@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ed">
+  <title>Cắm hoa — Không gian của bạn</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="embedded-studio">
+  <main>
+    <section class="workspace" aria-label="Góc cắm hoa 3D">
+      <div id="scene" role="img" aria-label="Khung cảnh 3D bình hoa trên bàn bên cửa sổ, góc nhìn chính diện 90 độ"><div id="loading">Đang mở cửa đón nắng…</div></div>
+      <nav class="scene-toolbar" aria-label="Điều chỉnh không gian">
+        <button id="toggle-flowers" class="cycle-setting" aria-label="Mở bảng thay đổi hoa" aria-controls="flower-panel" aria-expanded="false"><span class="hamburger" aria-hidden="true"><i></i><i></i><i></i></span><span><small>CẮM HOA</small><strong>Thay đổi hoa</strong></span></button>
+        <button id="change-vase" class="cycle-setting" disabled aria-label="Đổi kiểu bình" aria-describedby="vase-name"><span class="setting-icon" aria-hidden="true">♧</span><span><small id="vase-step">KIỂU BÌNH · 1/4</small><strong id="vase-name">Gốm cổ điển</strong></span><span class="cycle-arrow" aria-hidden="true">↻</span></button>
+        <button id="change-landscape" class="cycle-setting" disabled aria-label="Đổi cảnh ngoài cửa sổ" aria-describedby="landscape-name"><span class="setting-icon" aria-hidden="true">▧</span><span><small id="landscape-step">NGOÀI Ô CỬA · 1/8</small><strong id="landscape-name">Biển theo giờ</strong></span><span class="cycle-arrow" aria-hidden="true">↻</span></button>
+      </nav>
+      <div class="view-label"><span>⌑</span> GÓC CHÍNH DIỆN <b>90°</b></div>
+      <div class="scene-bottom"><span class="light-label">☀ <span>Nắng bên ô cửa</span></span><button id="export" class="export-btn" disabled>↓ <span>Lưu ảnh</span></button></div>
+    </section>
+    <dialog id="flower-panel" class="panel" aria-labelledby="panel-title">
+      <button id="close-flowers" class="close-panel" aria-label="Đóng bảng thay đổi hoa" autofocus>×</button>
+      <div class="panel-intro"><span class="eyebrow">BẮT ĐẦU TỪ MỘT CÀNH HOA</span><h2 id="panel-title">Bình hoa của bạn <span>✿</span></h2><p>Thêm hoa, thêm một chút riêng mình.</p></div>
+      <div class="daily-supply"><p id="daily-supply-status" role="status">Đang nhận 36 cành hoa/lá hôm nay…</p><button id="retry-supply" hidden>Thử tải lại</button><small>Mỗi ngày bạn chỉ có 36 bông hoa, lá để cắm thui hehe.</small></div>
+      <div class="tabs" role="group" aria-label="Lọc danh sách"><button class="tab active" data-filter="all" aria-pressed="true">Tất cả <span>16</span></button><button class="tab" data-filter="flower" aria-pressed="false">Hoa <span>13</span></button><button class="tab" data-filter="leaf" aria-pressed="false">Lá <span>3</span></button></div>
+      <div class="list-heading"><span>LOẠI HOA & LÁ</span><span>SỐ CÀNH</span></div>
+      <div id="catalog" class="catalog"></div>
+      <div id="no-results" hidden>Không có loại hoa phù hợp.</div>
+      <div class="vase-setting"><span>Màu bình gốm</span><div class="swatches" role="group" aria-label="Màu bình gốm"><button class="swatch selected" data-color="#e7ddc9" style="--swatch:#e7ddc9" aria-label="Màu kem" aria-pressed="true"></button><button class="swatch" data-color="#bd7960" style="--swatch:#bd7960" aria-label="Màu đất nung" aria-pressed="false"></button><button class="swatch" data-color="#829482" style="--swatch:#829482" aria-label="Màu xanh lá" aria-pressed="false"></button><button class="swatch" data-color="#697b8c" style="--swatch:#697b8c" aria-label="Màu xanh lam" aria-pressed="false"></button></div></div>
+      <div class="summary"><span id="total">0 cành trong bình</span><button id="clear">Bỏ hết</button></div>
+      <button id="inspire" class="primary">✧ <span>Gợi ý một bình hoa</span><span>↗</span></button>
+      <p class="panel-footnote">Chỉ dùng hoa/lá được cấp hôm nay · Lựa chọn lưu riêng theo tài khoản</p>
+    </dialog>
+  </main>
+  <div id="status" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -95,3 +95,15 @@ ZALO_WEBHOOK_SECRET=chuoi_bi_mat_tu_8_den_256_ky_tu
 `ZALO_WEBHOOK_SECRET` phải dài từ 8 đến 256 ký tự. Sau khi triển khai, quản trị viên đăng nhập, mở **Cài đặt tài khoản → Nhắc Zalo** và chọn **Thiết lập webhook**; Worker sẽ đăng ký webhook HTTPS trên tên miền đang mở và kiểm tra phản hồi. Chỉ tài khoản `duyvu@pvdv` được phép thực hiện thao tác này. Không gửi token/secret vào chat hoặc lưu trong mã frontend.
 
 Người dùng có thể bật/tắt từng loại nhắc, đặt giờ gửi bản tóm tắt hoặc ngắt liên kết trong cùng mục cài đặt. Bot chỉ gửi tin nhắn sau khi người dùng chủ động liên kết; công việc đã hoàn thành sẽ không được nhắc. Cron của Worker chạy mỗi phút nên thời gian gửi có độ chính xác trong khoảng một phút.
+
+## Góc cắm hoa
+
+Thẻ **Cắm hoa** nằm trong thanh điều hướng của website sau khi đăng nhập. Nội dung 3D chỉ tải khi mở thẻ, từ [public/flower-studio](./public/flower-studio/), được đóng gói cùng static assets của Cloudflare. Không cần thêm dependency hoặc thay đổi cơ sở dữ liệu.
+
+Mỗi tài khoản nhận đúng **36 cành hoa/lá ngẫu nhiên mỗi ngày**, đặt lại lúc **00:00 giờ Việt Nam (UTC+7)**. API xác thực `GET /api/flowers/daily` lấy tài khoản từ phiên đăng nhập và ngày từ máy chủ. Danh sách bốc bằng HMAC-SHA256 với `AUTH_SECRET`, tài khoản, ngày và phiên bản thuật toán, nên giữ nguyên trong ngày giữa các lần tải lại và thiết bị, không cần bảng dữ liệu mới. Không nhận ngày, tên tài khoản hoặc hạn mức do trình duyệt gửi lên. Giữ `AUTH_SECRET` và phiên bản thuật toán ổn định để giữ nguyên lượt cấp trong ngày.
+
+Trong bảng hoa, mỗi loại hiển thị số còn dùng được/số được cấp; tăng, giảm và gợi ý phối hoa đều giới hạn theo danh sách hôm nay. Cành bỏ khỏi bình được dùng lại trong ngày; không cộng dồn sang ngày tiếp theo. Khi qua nửa đêm hoặc quay lại trang sau thời gian nghỉ, ứng dụng kiểm tra máy chủ và thay lượt cấp khi sang ngày mới. Khi không tải được lượt cấp, việc chỉnh hoa bị khóa và có nút thử lại. Kiểu bình, màu bình và cảnh quan vẫn dùng được. Bình hoa được lưu cục bộ bằng khóa riêng theo tài khoản và ngày; dữ liệu lưu chung của demo cũ không được dùng làm nguồn cấp hoa.
+
+Bản tích hợp bỏ phần tiêu đề/giới thiệu của demo, dùng khung cửa xanh trầm và giữ các nút chỉnh hoa, đổi bình, đổi cảnh. Bảng chỉnh hoa mặc định ẩn. Lựa chọn được lưu trong trình duyệt theo origin của website. Bản demo riêng tại [demos/flower-studio](./demos/flower-studio/) vẫn được giữ để tham khảo; khi sửa tính năng đã tích hợp, chỉnh bản trong public/flower-studio.
+
+Chạy website bằng `npm.cmd run dev`, mở http://127.0.0.1:8787 rồi chọn **Cắm hoa**. Các file ảnh trong module là ảnh người dùng cung cấp; thư viện Three.js kèm giấy phép MIT trong thư mục vendor của module.

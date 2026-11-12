@@ -20,6 +20,21 @@ const ENTRY_ALLOWED_FILE_EXTENSIONS = new Set([
 ]);
 const ENTRY_UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 const encoder = new TextEncoder();
+const DAILY_FLOWER_IDS = ['rose', 'sunflower', 'hydrangea', 'lily', 'tulip', 'daisy', 'pingpong', 'carnation', 'bluestar', 'snapdragon', 'ranunculus', 'lilyvalley', 'sprayrose', 'eucalyptus', 'fern', 'dracaena'];
+
+async function dailyFlowers(username, secret, now = Date.now()) {
+  const day = new Date(now + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  // A secret, account-specific daily draw: stable across devices, reloads and concurrent requests.
+  // Sixteen species divide the byte range evenly, so each draw has equal probability.
+  const inventory = Object.fromEntries(DAILY_FLOWER_IDS.map(id => [id, 0]));
+  let drawn = 0;
+  for (let block = 0; drawn < 36; block++) {
+    const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(JSON.stringify(['daily-flowers-v1', username, day, block]))));
+    for (const byte of bytes) { inventory[DAILY_FLOWER_IDS[byte % 16]]++; if (++drawn === 36) break; }
+  }
+  return { username, day, total: 36, inventory, timeZone: 'Asia/Ho_Chi_Minh', serverTime: new Date(now).toISOString(), nextResetAt: new Date(Date.parse(`${day}T00:00:00Z`) + 17 * 60 * 60 * 1000).toISOString() };
+}
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -1998,6 +2013,11 @@ export default {
 
       if (['POST', 'PUT', 'DELETE'].includes(request.method) && !hasValidOrigin(request)) {
         return json({ error: 'Nguồn gửi yêu cầu không hợp lệ.' }, 403);
+      }
+
+      if (pathname === '/api/flowers/daily') {
+        if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, { Allow: 'GET' });
+        return json(await dailyFlowers(session.username, env.AUTH_SECRET));
       }
 
       const zaloResponse = await handleZaloApi(request, env, session.username, pathname);
