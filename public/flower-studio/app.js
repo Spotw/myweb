@@ -55,7 +55,7 @@ async function loadDailyStock() {
     STORAGE = `hien-nha-flower-studio-v2:${encodeURIComponent(account)}`;
     if (accountChanged || dayChanged) {
       counts = {};
-      if (accountChanged) restoreAccountSettings();
+      if (accountChanged) { landscape='ocean'; restoreAccountSettings(); }
       if (ready) {
         vaseController.setColor(vaseColor); vaseController.setStyle(vaseStyle);
         document.querySelector('#scene').dataset.vaseStyle = vaseStyle;
@@ -130,11 +130,12 @@ function updateUI() {
   document.querySelector('#inspire').disabled = !stockReady;
   document.querySelector('#daily-supply-status').textContent = stockReady ? `Hoa hôm nay · ${stockDay.split('-').reverse().join('/')} · 36 cành` : 'Đang xác nhận hoa/lá hôm nay…';
   document.querySelector('#vase-name').textContent=VASES.find(v=>v.id===vaseStyle).name;
-  document.querySelector('#landscape-name').textContent=LANDSCAPES.find(s=>s.id===landscape).name;
-  const vaseIndex=VASES.findIndex(v=>v.id===vaseStyle), landscapeIndex=LANDSCAPES.findIndex(s=>s.id===landscape);
+  const vaseIndex=VASES.findIndex(v=>v.id===vaseStyle);
   document.querySelector('#vase-step').textContent=`KIỂU BÌNH · ${vaseIndex+1}/${VASES.length}`;
-  document.querySelector('#landscape-step').textContent=`NGOÀI Ô CỬA · ${landscapeIndex+1}/${LANDSCAPES.length}`;
   document.querySelector('#change-vase').title=`Đổi sang ${VASES[(vaseIndex+1)%VASES.length].name}`;
+  const landscapeIndex=LANDSCAPES.findIndex(s=>s.id===landscape);
+  document.querySelector('#landscape-name').textContent=LANDSCAPES[landscapeIndex].name;
+  document.querySelector('#landscape-step').textContent=`NGOÀI Ô CỬA · ${landscapeIndex+1}/${LANDSCAPES.length}`;
   document.querySelector('#change-landscape').title=`Đổi sang ${LANDSCAPES[(landscapeIndex+1)%LANDSCAPES.length].name}`;
   for (const swatch of document.querySelectorAll('.swatch')) { const chosen = swatch.dataset.color === vaseColor; swatch.classList.toggle('selected', chosen); swatch.setAttribute('aria-pressed', chosen); }
 }
@@ -157,11 +158,13 @@ document.querySelector('#change-vase').addEventListener('click',()=>{
   updateUI();save();render();notify(`Đã đổi bình: ${VASES.find(v=>v.id===vaseStyle).name}.`);
 });
 async function applyLandscape(id) {
-  const button=document.querySelector('#change-landscape'); button.disabled=true;button.setAttribute('aria-busy','true');
-  const previous=scenery ? document.querySelector('#scene').dataset.landscape : 'ocean';
-  try {await scenery.setLandscape(id);landscape=id;updateUI();save();}
-  catch(error){console.error(error);landscape=previous||'ocean';updateUI();save();notify('Chưa tải được cảnh quan. Bạn có thể bấm để thử lại.');}
-  finally{button.disabled=!ready;button.removeAttribute('aria-busy');}
+  const button=document.querySelector('#change-landscape');
+  button.disabled=true;button.setAttribute('aria-busy','true');
+  try { await scenery.setLandscape(id); landscape=id; updateUI(); save(); }
+  catch(error) {
+    console.error(error); landscape=document.querySelector('#scene').dataset.landscape || 'ocean';
+    updateUI(); save(); notify('Chưa tải được cảnh quan. Bạn có thể bấm để thử lại.');
+  } finally { button.disabled=!ready;button.removeAttribute('aria-busy'); }
 }
 document.querySelector('#change-landscape').addEventListener('click',()=>{
   if(!ready)return;
@@ -504,11 +507,19 @@ function init() {
   const ambient = new THREE.HemisphereLight('#fff8e8', '#b4b09a', 2.7); scene.add(ambient);
   const sun = new THREE.DirectionalLight('#fff2d4', 3.4); sun.position.set(-3, 6, 5); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -7; sun.shadow.camera.right = 7; sun.shadow.camera.top = 7; sun.shadow.camera.bottom = -4; sun.shadow.normalBias = .035; sun.shadow.bias = -.0003; sun.shadow.radius = 5; scene.add(sun);
+  const vaseLight = new THREE.SpotLight('#ffe0ad', 110, 14, .42, .7, 2);
+  vaseLight.target.position.set(.75, .8, 0);
+  // A 5-unit rise over a 5-unit horizontal distance gives a 45-degree downward beam.
+  vaseLight.position.set(-2.25, 5.8, 4);
+  vaseLight.castShadow = true; vaseLight.visible = false;
+  vaseLight.shadow.mapSize.set(1024, 1024); vaseLight.shadow.normalBias = .025;
+  vaseLight.shadow.bias = -.0003; vaseLight.shadow.radius = 3;
+  scene.add(vaseLight, vaseLight.target);
   box(scene, 0, 3, -1.1, 25, 16, .2, '#e3e1d4');
   // The ocean plane sits inside the recessed timber window, behind its mullions.
   const windowGroup = new THREE.Group(); scene.add(windowGroup);
   box(windowGroup, -2.12, 3.45, -.9, 2.45, 3.55, .16, '#47695d');
-  scenery = createOceanWindow(windowGroup, ambient, sun, renderer, render);
+  scenery = createOceanWindow(windowGroup, ambient, sun, renderer, render, vaseLight);
   for (const x of [-3.34, -.9]) box(windowGroup, x, 3.45, -.59, .11, 3.6, .19, '#547c6d');
   for (const y of [1.67, 5.23]) box(windowGroup, -2.12, y, -.59, 2.53, .11, .19, '#547c6d');
   box(windowGroup, -2.12, 1.61, -.4, 2.7, .12, .65, '#547c6d');

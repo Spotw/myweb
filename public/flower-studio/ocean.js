@@ -1,30 +1,60 @@
 import * as THREE from './vendor/three.module.js';
 import { daylightAt } from './daylight.js';
 import { LANDSCAPES } from './landscapes.js';
+import { createOceanDepth } from './ocean-depth.js';
 
-export function createOceanWindow(scene, ambient, sunlight, renderer, render) {
+export function createOceanWindow(scene, ambient, sunlight, renderer, render, vaseLight) {
   const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 1536;
   const ctx = canvas.getContext('2d'), horizon = 895;
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
-  const view = new THREE.Mesh(new THREE.PlaneGeometry(2.14, 3.4), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+  const depth = createOceanDepth(texture, renderer, render);
+  const view = new THREE.Mesh(new THREE.PlaneGeometry(2.14, 3.4, 48, 64), depth.material);
   view.position.set(-2.12, 3.45, -.77); scene.add(view);
   const fraction = n => Math.sin(n * 127.1 + 311.7) * 43758.5453 % 1;
   const noise = n => Math.abs(fraction(n));
-  const images = new Map();
+  const videos = new Map();
   let active = LANDSCAPES[0], request = 0;
-  async function setLandscape(id) {
-    const next = LANDSCAPES.find(item=>item.id===id); if(!next) throw new Error('Unknown landscape');
-    const currentRequest=++request;
-    if(next.image && !images.has(id)) {
-      const image=new Image(); image.src=new URL(`./assets/${next.image}`,import.meta.url).href;
-      await image.decode(); images.set(id,image);
+  async function loadVideo(definition) {
+    if (videos.has(definition.id)) return videos.get(definition.id);
+    const video = document.createElement('video');
+    video.muted = true; video.loop = true; video.playsInline = true; video.preload = 'auto';
+    video.src = new URL(`./assets/${definition.video}`, import.meta.url).href;
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => finish(new Error('Video load timed out')), 20000);
+        function finish(error) {
+          clearTimeout(timeout);
+          video.removeEventListener('loadeddata', loaded);
+          video.removeEventListener('error', failed);
+          if (error) reject(error); else resolve();
+        }
+        const loaded = () => finish(), failed = () => finish(new Error('Video unavailable'));
+        video.addEventListener('loadeddata', loaded, { once: true });
+        video.addEventListener('error', failed, { once: true });
+        video.load();
+      });
+      const map = new THREE.VideoTexture(video); map.colorSpace = THREE.SRGBColorSpace;
+      const media = { video, map }; videos.set(definition.id, media); return media;
+    } catch (error) {
+      video.removeAttribute('src'); video.load(); throw error;
     }
-    if(currentRequest!==request)return;
-    active=next;refresh();
+  }
+  async function setLandscape(id) {
+    const next = LANDSCAPES.find(item => item.id === id);
+    if (!next) throw new Error('Unknown landscape');
+    const currentRequest = ++request;
+    const media = next.video ? await loadVideo(next) : null;
+    if (currentRequest !== request) return;
+    active = next;
+    depth.setSource(media?.map || texture, media?.video || null, next.focus ?? .5);
+    refresh();
   }
 
   function refresh() {
-    const state = daylightAt(), { hour, daylight, progress } = state;
+    const clock = daylightAt();
+    const state = active.id === 'stars' ? { ...clock, night: true, daylight: 0, sunVisible: false }
+      : active.id === 'hillside' ? { ...clock, night: false, daylight: .9, sunVisible: true } : clock;
+    const { hour, daylight, progress } = state;
     const sky = ctx.createLinearGradient(0, 0, 0, horizon); sky.addColorStop(0, state.skyTop); sky.addColorStop(1, state.skyHorizon);
     ctx.fillStyle = sky; ctx.fillRect(0, 0, canvas.width, horizon);
     if (state.night) {
@@ -70,41 +100,33 @@ export function createOceanWindow(scene, ambient, sunlight, renderer, render) {
         ctx.beginPath(); ctx.moveTo(lightX - length / 2 + offset, y); ctx.lineTo(lightX + length / 2 + offset, y); ctx.stroke();
       }
     }
-    if(active.image) {
-      const image=images.get(active.id), targetRatio=canvas.width/canvas.height;
-      // Cover-crop only the artwork; this mesh and the frame keep their original dimensions.
-      if(active.framing) {
-        // Keep Totoro and the umbrella below the crossbar, to the left of the mullion.
-        // Extend the sky/outer foliage at the edges without stretching the subject.
-        const height=canvas.height*active.framing.height, width=height*image.naturalWidth/image.naturalHeight;
-        const x=canvas.width*active.framing.x, y=canvas.height*active.framing.y;
-        ctx.drawImage(image,0,0,image.naturalWidth,image.naturalHeight*.35,0,0,canvas.width,y);
-        ctx.drawImage(image,0,0,image.naturalWidth*.12,image.naturalHeight,0,y,x,height);
-        ctx.drawImage(image,image.naturalWidth*.75,0,image.naturalWidth*.25,image.naturalHeight,x+width,y,canvas.width-x-width,height);
-        ctx.drawImage(image,x,y,width,height);
-      } else {
-      const cropWidth=Math.min(image.naturalWidth,image.naturalHeight*targetRatio);
-      const cropHeight=Math.min(image.naturalHeight,image.naturalWidth/targetRatio);
-      const sourceX=(image.naturalWidth-cropWidth)*(active.focus??.5), sourceY=(image.naturalHeight-cropHeight)*.5;
-      ctx.drawImage(image,sourceX,sourceY,cropWidth,cropHeight,0,0,canvas.width,canvas.height);
-      }
-      const dim=state.night ? .35 : daylight<.25 ? .10 : 0;
-      if(dim){ctx.fillStyle=`rgba(13,27,55,${dim})`;ctx.fillRect(0,0,canvas.width,canvas.height);}
-    }
     texture.needsUpdate = true;
+    depth.update(lightX / canvas.width, state.night, canvas.width / canvas.height);
     ambient.intensity = 1.05 + daylight * 1.65;
     ambient.color.set(state.night ? '#b9cbef' : '#fff8e8');
     sunlight.intensity = state.night ? .25 : .55 + daylight * 2.85;
     sunlight.color.set(state.night ? '#b3cafa' : daylight < .35 ? '#ffc29a' : '#fff2d4');
     sunlight.position.set(-4 + progress * 6, 2.4 + daylight * 4, 5);
+    const oceanUplight = active.id === 'ocean' && state.night;
+    vaseLight.visible = active.id === 'stars' || oceanUplight;
+    if (oceanUplight) {
+      // Rise by sqrt(3) over a horizontal distance of 1: a 60-degree uplight above the tabletop.
+      vaseLight.position.set(.15, .2, .8);
+      vaseLight.target.position.set(.75, .2 + Math.sqrt(3), 0);
+      vaseLight.intensity = 10;
+    } else {
+      vaseLight.position.set(-2.25, 5.8, 4);
+      vaseLight.target.position.set(.75, .8, 0);
+      vaseLight.intensity = 110;
+    }
     renderer.toneMappingExposure = state.night ? .98 : 1.12 + daylight * .1;
     const label = document.querySelector('.light-label');
     label.replaceChildren();
     const icon = document.createElement('span'); icon.textContent = state.night ? '☾' : '☀'; icon.setAttribute('aria-hidden', 'true');
     const caption = document.createElement('span'); caption.textContent = `${active.id==='ocean'?state.phase:active.name} · ${state.time}`;
-    label.append(icon, caption); label.title = 'Theo giờ trên thiết bị · Chu kỳ mặt trời minh họa 06:00–18:00';
+    label.append(icon, caption); label.title = active.video ? 'Cảnh chuyển động từ video gốc' : 'Theo giờ trên thiết bị · Chu kỳ mặt trời minh họa 06:00–18:00';
     document.querySelector('.workspace').classList.toggle('night', state.night);
-    document.querySelector('#scene').setAttribute('aria-label', `Bình hoa bên cửa sổ. ${active.description}. ${state.phase}, ${state.time}, theo giờ thiết bị.`);
+    document.querySelector('#scene').setAttribute('aria-label', `Bình hoa bên cửa sổ. ${active.description}. ${active.video ? active.name : state.phase}, ${state.time}.`);
     document.querySelector('#scene').dataset.landscape=active.id;
     render();
   }

@@ -14,7 +14,7 @@
       <nav class="scene-toolbar" aria-label="Điều chỉnh không gian">
         <button id="toggle-flowers" class="cycle-setting" aria-label="Mở bảng thay đổi hoa" aria-controls="flower-panel" aria-expanded="false"><span class="hamburger" aria-hidden="true"><i></i><i></i><i></i></span><span><small>CẮM HOA</small><strong>Thay đổi hoa</strong></span></button>
         <button id="change-vase" class="cycle-setting" disabled aria-label="Đổi kiểu bình" aria-describedby="vase-name"><span class="setting-icon" aria-hidden="true">♧</span><span><small id="vase-step">KIỂU BÌNH · 1/4</small><strong id="vase-name">Gốm cổ điển</strong></span><span class="cycle-arrow" aria-hidden="true">↻</span></button>
-        <button id="change-landscape" class="cycle-setting" disabled aria-label="Đổi cảnh ngoài cửa sổ" aria-describedby="landscape-name"><span class="setting-icon" aria-hidden="true">▧</span><span><small id="landscape-step">NGOÀI Ô CỬA · 1/8</small><strong id="landscape-name">Biển theo giờ</strong></span><span class="cycle-arrow" aria-hidden="true">↻</span></button>
+        <button id="change-landscape" class="cycle-setting" disabled aria-label="Đổi cảnh ngoài cửa sổ" aria-describedby="landscape-name"><span class="setting-icon" aria-hidden="true">▧</span><span><small id="landscape-step">NGOÀI Ô CỬA · 1/3</small><strong id="landscape-name">Biển theo giờ</strong></span><span class="cycle-arrow" aria-hidden="true">↻</span></button>
       </nav>
       <div class="view-label"><span>⌑</span> GÓC CHÍNH DIỆN <b>90°</b></div>
       <div class="scene-bottom"><span class="light-label">☀ <span>Nắng bên ô cửa</span></span><button id="export" class="export-btn" disabled>↓ <span>Lưu ảnh</span></button></div>
@@ -34,6 +34,7 @@
     </dialog>
   </main>
   <div id="status" class="toast" role="status" aria-live="polite"></div>
+  <script src="./vendor/gsap.min.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
